@@ -83,7 +83,10 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
                     displayRotation = (info.orientation - deviceRotation + 360) % 360;
         }
 
+
         Camera.Parameters params= mCamera.getParameters();
+        Camera.Size preferredSize= params.getPreferredPreviewSizeForVideo();
+        params.setPreviewSize(preferredSize.width, preferredSize.height);
         params.setRotation(imageRotation);
         mCamera.setParameters(params);
         mCamera.setDisplayOrientation(displayRotation);
