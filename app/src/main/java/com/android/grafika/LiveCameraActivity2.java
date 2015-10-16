@@ -28,6 +28,7 @@ import android.view.SurfaceView;
 import android.view.TextureView;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import java.io.IOException;
 
@@ -53,6 +54,15 @@ public class LiveCameraActivity2 extends Activity implements SurfaceHolder.Callb
         holder.addCallback(this);
 
         ((ViewGroup)findViewById(android.R.id.content)).addView(mSurfaceView);
+
+        // show that we can overlay stuff on the camera preview
+        TextView textView= new TextView(this);
+        textView.setText(getClass().getSimpleName());
+        textView.setTextColor(getResources().getColor(android.R.color.white));
+        textView.setBackground(getResources().getDrawable(android.R.drawable.screen_background_dark_transparent));
+        textView.setGravity(Gravity.CENTER_HORIZONTAL);
+        textView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((ViewGroup)findViewById(android.R.id.content)).addView(textView);
    }
 
     @Override
