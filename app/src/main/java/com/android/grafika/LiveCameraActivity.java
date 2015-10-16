@@ -25,6 +25,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.TextureView;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.io.IOException;
@@ -48,7 +49,7 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
         mTextureView = new TextureView(this);
         mTextureView.setSurfaceTextureListener(this);
 
-        setContentView(mTextureView);
+        ((ViewGroup)findViewById(android.R.id.content)).addView(mTextureView);
     }
 
     @Override

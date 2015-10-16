@@ -26,6 +26,7 @@ import android.view.Gravity;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.TextureView;
+import android.view.ViewGroup;
 import android.widget.FrameLayout;
 
 import java.io.IOException;
@@ -51,8 +52,8 @@ public class LiveCameraActivity2 extends Activity implements SurfaceHolder.Callb
         SurfaceHolder holder = mSurfaceView.getHolder();
         holder.addCallback(this);
 
-        setContentView(mSurfaceView);
-    }
+        ((ViewGroup)findViewById(android.R.id.content)).addView(mSurfaceView);
+   }
 
     @Override
     public void surfaceCreated(SurfaceHolder holder) {
