@@ -135,6 +135,7 @@
     <string name="title_activity_texture_view_gl">Basic GL in TextureView</string>
     <string name="title_activity_texture_view_canvas">Basic Canvas in TextureView</string>
     <string name="title_activity_live_camera">Live camera (TextureView)</string>
+    <string name="title_activity_live_camera2">Live camera (SurfaceView)</string>
     <string name="title_activity_record_fbo">Record GL app</string>
     <string name="action_settings">Settings</string>
     <string name="title_activity_chor_test">ChorTestActivity</string>

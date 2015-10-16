@@ -18,41 +18,44 @@ package com.android.grafika;
 
 import android.app.Activity;
 import android.content.pm.ActivityInfo;
-import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.TextureView;
 import android.widget.FrameLayout;
 
 import java.io.IOException;
 
 /**
- * More or less straight out of TextureView's doc.
+ * More or less straight out of Camera docs.
  * <p>
  * TODO: add options for different display sizes, frame rates, camera selection, etc.
  */
-public class LiveCameraActivity extends Activity implements TextureView.SurfaceTextureListener {
+public class LiveCameraActivity2 extends Activity implements SurfaceHolder.Callback {
     private static final String TAG = MainActivity.TAG;
 
     private Camera mCamera;
-    private TextureView mTextureView;
+    private SurfaceView mSurfaceView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, getClass().getSimpleName() + " onCreate");
 
-        mTextureView = new TextureView(this);
-        mTextureView.setSurfaceTextureListener(this);
+        mSurfaceView = new SurfaceView(this);
 
-        setContentView(mTextureView);
+        SurfaceHolder holder = mSurfaceView.getHolder();
+        holder.addCallback(this);
+
+        setContentView(mSurfaceView);
     }
 
     @Override
-    public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
+    public void surfaceCreated(SurfaceHolder holder) {
         Camera.CameraInfo info = new Camera.CameraInfo();
 
         // Try to find a front-facing camera (e.g. for videoconferencing).
@@ -74,7 +77,7 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
 
         // deal with device rotation
 
-        int imageRotation, displayRotation, deviceRotation= CameraUtils.getRotationDegrees(this);
+        int imageRotation, displayRotation, deviceRotation = CameraUtils.getRotationDegrees(this);
         if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
             imageRotation = (info.orientation + deviceRotation) % 360;
             displayRotation = (360 - imageRotation) % 360; // compensate the mirror
@@ -83,17 +86,28 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
                     displayRotation = (info.orientation - deviceRotation + 360) % 360;
         }
 
-        Camera.Parameters params= mCamera.getParameters();
+        Camera.Parameters params = mCamera.getParameters();
         params.setRotation(imageRotation);
         mCamera.setParameters(params);
         mCamera.setDisplayOrientation(displayRotation);
+    }
+
+    @Override
+    public void surfaceDestroyed(SurfaceHolder holder) {
+        mCamera.stopPreview();
+        mCamera.release();
+    }
+
+    @Override
+    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+        Camera.Parameters params = mCamera.getParameters();
 
         // deal with camera sizing
 
-        Camera.Size previewSize= params.getPreviewSize();
-        int screenOrientation= CameraUtils.getScreenOrientation(this);
+        Camera.Size previewSize = params.getPreviewSize();
+        int screenOrientation = CameraUtils.getScreenOrientation(this);
         if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
-            previewSize= mCamera.new Size(previewSize.height, previewSize.width);
+            previewSize = mCamera.new Size(previewSize.height, previewSize.width);
         }
         float previewAspectRatio = previewSize.width / (float) previewSize.height;
         int scaledWidth = (int) Math.round(height * (double) previewAspectRatio);
@@ -104,31 +118,13 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
             height = scaledHeight;
         }
 
-        mTextureView.setLayoutParams(new FrameLayout.LayoutParams(width, height, Gravity.CENTER));
+        mSurfaceView.setLayoutParams(new FrameLayout.LayoutParams(width, height, Gravity.CENTER));
 
         try {
-            mCamera.setPreviewTexture(surface);
+            mCamera.setPreviewDisplay(holder);
             mCamera.startPreview();
         } catch (IOException ioe) {
             // Something bad happened
         }
-    }
-
-    @Override
-    public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-        // Ignored, Camera does all the work for us
-    }
-
-    @Override
-    public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
-        mCamera.stopPreview();
-        mCamera.release();
-        return true;
-    }
-
-    @Override
-    public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-        // Invoked every time there's a new Camera preview frame
-        //Log.d(TAG, "updated, ts=" + surface.getTimestamp());
     }
 }
