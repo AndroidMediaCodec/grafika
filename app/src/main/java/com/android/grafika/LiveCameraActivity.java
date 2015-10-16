@@ -18,10 +18,13 @@ package com.android.grafika;
 
 import android.app.Activity;
 import android.content.pm.ActivityInfo;
-import android.graphics.Matrix;
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.HandlerThread;
+import android.os.Message;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.TextureView;
@@ -29,7 +32,10 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * More or less straight out of TextureView's doc.
@@ -41,11 +47,40 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
 
     private Camera mCamera;
     private TextureView mTextureView;
+    File mOutputDir;
+
+    Bitmap mBitmap;
+    long mBitmapTimestamp;
+
+    Object mSignaler= new Object();
+    AtomicBoolean _busy= new AtomicBoolean(false);
+    Thread mWorkerThread;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, getClass().getSimpleName() + " onCreate");
+
+        mOutputDir= getExternalCacheDir();
+        Log.d(TAG, "output dir " + mOutputDir);
+
+        mWorkerThread= new Thread("worker") {
+            @Override
+            public void run() {
+                while (!isFinishing()) {
+                    try {
+                        synchronized (mSignaler) {
+                            mSignaler.wait();
+                            _busy.set(true);
+                            saveBitmap(mBitmap, mBitmapTimestamp);
+                            _busy.set(false);
+                        }
+                    } catch (InterruptedException e) {
+                    }
+                }
+                Log.d(TAG, "worker thread shutdown");
+            }
+        };
 
         mTextureView = new TextureView(this);
         mTextureView.setSurfaceTextureListener(this);
@@ -118,11 +153,13 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
             height = scaledHeight;
         }
 
+        mBitmap= Bitmap.createBitmap(previewSize.width, previewSize.height, Bitmap.Config.ARGB_8888);
         mTextureView.setLayoutParams(new FrameLayout.LayoutParams(width, height, Gravity.CENTER));
 
         try {
             mCamera.setPreviewTexture(surface);
             mCamera.startPreview();
+            mWorkerThread.start();
         } catch (IOException ioe) {
             // Something bad happened
         }
@@ -142,7 +179,34 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
 
     @Override
     public void onSurfaceTextureUpdated(SurfaceTexture surface) {
-        // Invoked every time there's a new Camera preview frame
-        //Log.d(TAG, "updated, ts=" + surface.getTimestamp());
+        if (!_busy.get()) {
+            synchronized (mSignaler) {
+                mSignaler.notifyAll();
+                mTextureView.getBitmap(mBitmap);
+                mBitmapTimestamp = surface.getTimestamp();
+            }
+        } else {
+            Log.d(TAG, "dropping frame");
+        }
+    }
+
+    protected void saveBitmap(Bitmap bmp, long timestamp) {
+        FileOutputStream out = null;
+        try {
+            File outputFile= new File(mOutputDir, Long.toString(timestamp) + ".jpg");
+            Log.d(TAG, "output " + outputFile);
+            out = new FileOutputStream(outputFile);
+            bmp.compress(Bitmap.CompressFormat.JPEG, 100, out);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        } finally {
+            try {
+                if (out != null) {
+                    out.close();
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }
