@@ -17,11 +17,15 @@
 package com.android.grafika;
 
 import android.app.Activity;
+import android.content.pm.ActivityInfo;
+import android.graphics.Matrix;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.Gravity;
 import android.view.TextureView;
+import android.widget.FrameLayout;
 
 import java.io.IOException;
 
@@ -66,6 +70,40 @@ public class LiveCameraActivity extends Activity implements TextureView.SurfaceT
         if (mCamera == null) {
             throw new RuntimeException("Unable to open camera");
         }
+
+        // deal with device rotation
+
+        int imageRotation, displayRotation, deviceRotation= CameraUtils.getRotationDegrees(this);
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            imageRotation = (info.orientation + deviceRotation) % 360;
+            displayRotation = (360 - imageRotation) % 360; // compensate the mirror
+        } else {
+            imageRotation =
+                    displayRotation = (info.orientation - deviceRotation + 360) % 360;
+        }
+
+        Camera.Parameters params= mCamera.getParameters();
+        params.setRotation(imageRotation);
+        mCamera.setParameters(params);
+        mCamera.setDisplayOrientation(displayRotation);
+
+        // deal with camera sizing
+
+        Camera.Size previewSize= params.getPreviewSize();
+        int screenOrientation= CameraUtils.getScreenOrientation(this);
+        if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
+            previewSize= mCamera.new Size(previewSize.height, previewSize.width);
+        }
+        float previewAspectRatio = previewSize.width / (float) previewSize.height;
+        int scaledWidth = (int) Math.round(height * (double) previewAspectRatio);
+        int scaledHeight = (int) Math.round(width / (double) previewAspectRatio);
+        if (scaledWidth <= width) {
+            width = scaledWidth;
+        } else {
+            height = scaledHeight;
+        }
+
+        mTextureView.setLayoutParams(new FrameLayout.LayoutParams(width, height, Gravity.CENTER));
 
         try {
             mCamera.setPreviewTexture(surface);
