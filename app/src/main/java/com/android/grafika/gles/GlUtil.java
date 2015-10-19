@@ -174,13 +174,13 @@ public class GlUtil {
         return fb;
     }
 
-    public static int createTextureObject() {
+    public static int createTextureObject(int textureTarget) {
         int[] textures = new int[1];
         GLES20.glGenTextures(1, textures, 0);
         GlUtil.checkGlError("glGenTextures");
 
         int texId = textures[0];
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId);
+        GLES20.glBindTexture(textureTarget, texId);
         GlUtil.checkGlError("glBindTexture " + texId);
 
         GLES20.glTexParameterf(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER,

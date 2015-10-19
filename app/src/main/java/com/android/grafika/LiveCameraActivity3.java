@@ -20,17 +20,14 @@ import android.app.Activity;
 import android.content.pm.ActivityInfo;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
+import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
-import android.opengl.GLU;
-import android.opengl.GLUtils;
 import android.opengl.Matrix;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
-import android.view.SurfaceView;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import com.android.grafika.gles.GlUtil;
@@ -49,7 +46,7 @@ import javax.microedition.khronos.opengles.GL10;
  * <p>
  * TODO: add options for different display sizes, frame rates, camera selection, etc.
  */
-public class LiveCameraActivity3 extends Activity {
+public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFrameAvailableListener {
     private static final String TAG = MainActivity.TAG;
 
     private GLSurfaceView mGLSurfaceView;
@@ -65,7 +62,7 @@ public class LiveCameraActivity3 extends Activity {
         mGLSurfaceView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         mGLSurfaceView.setEGLContextClientVersion(2);
         mGLSurfaceView.setRenderer(new GLRenderer());
-        //mGLSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
+        mGLSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
 
         ((ViewGroup)findViewById(android.R.id.content)).addView(mGLSurfaceView);
 
@@ -77,6 +74,12 @@ public class LiveCameraActivity3 extends Activity {
         textView.setGravity(Gravity.CENTER_HORIZONTAL);
         textView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         ((ViewGroup)findViewById(android.R.id.content)).addView(textView);
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        openCamera();
     }
 
     @Override
@@ -145,11 +148,18 @@ public class LiveCameraActivity3 extends Activity {
         }
 
         try {
+            surfaceTexture.setOnFrameAvailableListener(this);
             mCamera.setPreviewTexture(surfaceTexture);
             mCamera.startPreview();
-        } catch (IOException ioe) {
-            // Something bad happened
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
+    }
+
+    @Override
+    public void onFrameAvailable(SurfaceTexture surfaceTexture) {
+        Log.d(TAG, "onFrameAvailable");
+        mGLSurfaceView.requestRender();
     }
 
     private class GLRenderer implements GLSurfaceView.Renderer {
@@ -158,26 +168,35 @@ public class LiveCameraActivity3 extends Activity {
         private final float[] mViewMatrix = new float[16];
 
         GlRectangle mSquare;
+        SurfaceTexture mSurfaceTexture;
 
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             mSquare= new GlRectangle();
-            openCamera();
         }
 
         @Override
-        public void onSurfaceChanged(GL10 gl, int width, int height) {
+        public void onSurfaceChanged(GL10 gl, final int width, final int height) {
             GLES20.glViewport(0, 0, width, height);
 
             float ratio = (float) width / height;
             Matrix.frustumM(mProjectionMatrix, 0, -ratio, ratio, -1, 1, 3, 7);
 
-            startCamera(new SurfaceTexture(mSquare.mTextureHandle), width, height);
+            mSurfaceTexture= new SurfaceTexture(mSquare.mTextureHandle);
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    startCamera(mSurfaceTexture, width, height);
+                }
+            });
         }
 
         @Override
         public void onDrawFrame(GL10 gl) {
+            Log.d(TAG, "onDrawFrame");
+            mSurfaceTexture.updateTexImage();
+
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
             Matrix.setLookAtM(mViewMatrix, 0, 0, 0, -3, 0f, 0f, 0f, 0f, 1.0f, 0.0f);
@@ -210,6 +229,9 @@ public class LiveCameraActivity3 extends Activity {
         private int mMVPMatrixHandle;
         public int mTextureHandle;
 
+        private static final int SIZEOF_FLOAT = Float.SIZE/8;
+        private static final int SIZEOF_SHORT = Short.SIZE/8;
+
         // number of coordinates per vertex in this array
         static final int COORDS_PER_VERTEX = 3;
         static float squareCoords[] = {
@@ -217,10 +239,8 @@ public class LiveCameraActivity3 extends Activity {
                 -1.0f, -1.0f, 0.0f,   // bottom left
                  1.0f, -1.0f, 0.0f,   // bottom right
                  1.0f,  1.0f, 0.0f }; // top right
-
+        private final int vertexStride = COORDS_PER_VERTEX * SIZEOF_FLOAT;
         private final short drawOrder[] = { 0, 1, 2, 0, 2, 3 }; // order to draw vertices
-
-        private final int vertexStride = COORDS_PER_VERTEX * 4; // 4 bytes per vertex
 
         float color[] = { 0.2f, 0.709803922f, 0.898039216f, 1.0f };
 
@@ -229,24 +249,20 @@ public class LiveCameraActivity3 extends Activity {
          */
         public GlRectangle() {
             // initialize vertex byte buffer for shape coordinates
-            ByteBuffer bb = ByteBuffer.allocateDirect(
-                    // (# of coordinate values * 4 bytes per float)
-                    squareCoords.length * 4);
+            ByteBuffer bb = ByteBuffer.allocateDirect(squareCoords.length * SIZEOF_FLOAT);
             bb.order(ByteOrder.nativeOrder());
             vertexBuffer = bb.asFloatBuffer();
             vertexBuffer.put(squareCoords);
             vertexBuffer.position(0);
 
             // initialize byte buffer for the draw list
-            ByteBuffer dlb = ByteBuffer.allocateDirect(
-                    // (# of coordinate values * 2 bytes per short)
-                    drawOrder.length * 2);
+            ByteBuffer dlb = ByteBuffer.allocateDirect(drawOrder.length * SIZEOF_SHORT);
             dlb.order(ByteOrder.nativeOrder());
             drawListBuffer = dlb.asShortBuffer();
             drawListBuffer.put(drawOrder);
             drawListBuffer.position(0);
 
-            mTextureHandle= GlUtil.createTextureObject();
+            mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
 
             // prepare shaders and OpenGL program
             int vertexShader = GlUtil.loadShader(
@@ -263,7 +279,6 @@ public class LiveCameraActivity3 extends Activity {
         }
 
         public void draw(float[] mvpMatrix) {
-            // Add program to OpenGL environment
             GLES20.glUseProgram(mProgram);
 
             // aPosition
@@ -277,8 +292,9 @@ public class LiveCameraActivity3 extends Activity {
                     vertexStride, vertexBuffer);
             GlUtil.checkGlError("glVertexAttribPointer");
 
-            // vColor
+            // uColor
             mColorHandle = GLES20.glGetUniformLocation(mProgram, "uColor");
+            GlUtil.checkLocation(mColorHandle, "uColor");
             GLES20.glUniform4fv(mColorHandle, 1, color, 0);
 
             // transformation matrix
@@ -291,9 +307,11 @@ public class LiveCameraActivity3 extends Activity {
             GLES20.glDrawElements(
                     GLES20.GL_TRIANGLES, drawOrder.length,
                     GLES20.GL_UNSIGNED_SHORT, drawListBuffer);
+            GlUtil.checkGlError("glDrawElements");
 
-            // Disable vertex array
+            // cleanup
             GLES20.glDisableVertexAttribArray(mPositionHandle);
+            GLES20.glUseProgram(0);
         }
 
     }
