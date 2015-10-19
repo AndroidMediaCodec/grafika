@@ -166,6 +166,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         GlRectangle mSquare;
         SurfaceTexture mSurfaceTexture;
+        private final float[] mTransformationMatrix = new float[16];
 
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -192,13 +193,15 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         @Override
         public void onDrawFrame(GL10 gl) {
             Log.d(TAG, "onDrawFrame");
+
             mSurfaceTexture.updateTexImage();
+            mSurfaceTexture.getTransformMatrix(mTransformationMatrix);
 
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
             Matrix.setLookAtM(mViewMatrix, 0, 0, 0, -3, 0f, 0f, 0f, 0f, 1.0f, 0.0f);
             Matrix.multiplyMM(mMVPMatrix, 0, mProjectionMatrix, 0, mViewMatrix, 0);
-            mSquare.draw(mMVPMatrix);
+            mSquare.draw(mMVPMatrix, mTransformationMatrix);
         }
     }
 
@@ -206,12 +209,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         private final String vertexShaderCode =
                 "uniform mat4 uMVPMatrix;" +
+                "uniform mat4 uTexMatrix;\n" +
                 "attribute vec4 aPosition;" +
-                "attribute vec2 aTextureCoord;\n" +
+                "attribute vec4 aTextureCoord;\n" +
                 "varying vec2 vTextureCoord;\n" +
                 "void main() {" +
-                "  vTextureCoord = aTextureCoord;" +
-                "  gl_Position = uMVPMatrix * aPosition;" +
+                "    gl_Position = uMVPMatrix * aPosition;" +
+                "    vTextureCoord = (uTexMatrix * aTextureCoord).xy;\n" +
                 "}";
 
         private final String fragmentShaderCode =
@@ -269,7 +273,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             GLES20.glLinkProgram(mProgram);                  // create OpenGL program executables
         }
 
-        public void draw(float[] mvpMatrix) {
+        public void draw(float[] mvpMatrix, float[] textMatrix) {
             GLES20.glUseProgram(mProgram);
 
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
@@ -296,6 +300,12 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                     GLES20.GL_FLOAT, false,
                     textureStride, textureBuffer);
             GlUtil.checkGlError("glVertexAttribPointer");
+
+            // uTexMatrix
+            int uTexMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uTexMatrix");
+            GlUtil.checkGlError("glGetUniformLocation");
+            GLES20.glUniformMatrix4fv(uTexMatrixHandle, 1, false, textMatrix, 0);
+            GlUtil.checkGlError("glUniformMatrix4fv");
 
             // uMVPMatrix
             mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uMVPMatrix");
