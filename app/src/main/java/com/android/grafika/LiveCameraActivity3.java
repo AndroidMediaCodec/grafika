@@ -17,19 +17,25 @@
 package com.android.grafika;
 
 import android.app.Activity;
+import android.content.pm.ActivityInfo;
+import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
+import android.opengl.GLU;
 import android.opengl.GLUtils;
 import android.opengl.Matrix;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.SurfaceView;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import com.android.grafika.gles.GlUtil;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
@@ -73,7 +79,80 @@ public class LiveCameraActivity3 extends Activity {
         ((ViewGroup)findViewById(android.R.id.content)).addView(textView);
     }
 
-    private static class GLRenderer implements GLSurfaceView.Renderer {
+    @Override
+    public void onPause() {
+        super.onPause();
+        mCamera.stopPreview();
+        mCamera.release();
+    }
+
+    private void openCamera() {
+        Camera.CameraInfo info = new Camera.CameraInfo();
+
+        // Try to find a front-facing camera (e.g. for videoconferencing).
+        int numCameras = Camera.getNumberOfCameras();
+        for (int i = 0; i < numCameras; i++) {
+            Camera.getCameraInfo(i, info);
+            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+                mCamera = Camera.open(i);
+                break;
+            }
+        }
+        if (mCamera == null) {
+            Log.d(TAG, "No front-facing camera found; opening default");
+            mCamera = Camera.open();    // opens first back-facing camera
+        }
+        if (mCamera == null) {
+            throw new RuntimeException("Unable to open camera");
+        }
+
+        // deal with device rotation
+
+        int imageRotation, displayRotation, deviceRotation = CameraUtils.getRotationDegrees(this);
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            imageRotation = (info.orientation + deviceRotation) % 360;
+            displayRotation = (360 - imageRotation) % 360; // compensate the mirror
+        } else {
+            imageRotation =
+                    displayRotation = (info.orientation - deviceRotation + 360) % 360;
+        }
+
+        Camera.Parameters params = mCamera.getParameters();
+        Camera.Size preferredSize= params.getPreferredPreviewSizeForVideo();
+        params.setPreviewSize(preferredSize.width, preferredSize.height);
+        params.setRotation(imageRotation);
+        mCamera.setParameters(params);
+        mCamera.setDisplayOrientation(displayRotation);
+    }
+
+    private void startCamera(SurfaceTexture surfaceTexture, int width, int height) {
+        Camera.Parameters params = mCamera.getParameters();
+
+        // deal with camera sizing
+
+        Camera.Size previewSize = params.getPreviewSize();
+        int screenOrientation = CameraUtils.getScreenOrientation(this);
+        if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
+            previewSize = mCamera.new Size(previewSize.height, previewSize.width);
+        }
+        float previewAspectRatio = previewSize.width / (float) previewSize.height;
+        int scaledWidth = (int) Math.round(height * (double) previewAspectRatio);
+        int scaledHeight = (int) Math.round(width / (double) previewAspectRatio);
+        if (scaledWidth <= width) {
+            width = scaledWidth;
+        } else {
+            height = scaledHeight;
+        }
+
+        try {
+            mCamera.setPreviewTexture(surfaceTexture);
+            mCamera.startPreview();
+        } catch (IOException ioe) {
+            // Something bad happened
+        }
+    }
+
+    private class GLRenderer implements GLSurfaceView.Renderer {
         private final float[] mMVPMatrix = new float[16];
         private final float[] mProjectionMatrix = new float[16];
         private final float[] mViewMatrix = new float[16];
@@ -84,6 +163,7 @@ public class LiveCameraActivity3 extends Activity {
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             mSquare= new GlRectangle();
+            openCamera();
         }
 
         @Override
@@ -92,6 +172,8 @@ public class LiveCameraActivity3 extends Activity {
 
             float ratio = (float) width / height;
             Matrix.frustumM(mProjectionMatrix, 0, -ratio, ratio, -1, 1, 3, 7);
+
+            startCamera(new SurfaceTexture(mSquare.mTextureHandle), width, height);
         }
 
         @Override
@@ -126,6 +208,7 @@ public class LiveCameraActivity3 extends Activity {
         private int mPositionHandle;
         private int mColorHandle;
         private int mMVPMatrixHandle;
+        public int mTextureHandle;
 
         // number of coordinates per vertex in this array
         static final int COORDS_PER_VERTEX = 3;
@@ -162,6 +245,8 @@ public class LiveCameraActivity3 extends Activity {
             drawListBuffer = dlb.asShortBuffer();
             drawListBuffer.put(drawOrder);
             drawListBuffer.position(0);
+
+            mTextureHandle= GlUtil.createTextureObject();
 
             // prepare shaders and OpenGL program
             int vertexShader = GlUtil.loadShader(
