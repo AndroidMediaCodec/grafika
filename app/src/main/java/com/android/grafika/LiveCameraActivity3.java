@@ -23,7 +23,6 @@ import android.hardware.Camera;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
-import android.opengl.Matrix;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
@@ -56,7 +55,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         Log.d(TAG, getClass().getSimpleName() + " onCreate");
 
         mGLSurfaceView= new GLSurfaceView(this);
-        mGLSurfaceView.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         mGLSurfaceView.setEGLContextClientVersion(2);
         mGLSurfaceView.setRenderer(new GLRenderer());
         mGLSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
@@ -161,8 +159,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
     private class GLRenderer implements GLSurfaceView.Renderer {
         private final float[] mMVPMatrix = new float[16];
-        private final float[] mProjectionMatrix = new float[16];
-        private final float[] mViewMatrix = new float[16];
 
         GlRectangle mSquare;
         SurfaceTexture mSurfaceTexture;
@@ -177,9 +173,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         @Override
         public void onSurfaceChanged(GL10 gl, final int width, final int height) {
             GLES20.glViewport(0, 0, width, height);
-
-            float ratio = (float) width / height;
-            Matrix.frustumM(mProjectionMatrix, 0, -ratio, ratio, -1, 1, 3, 7);
 
             mSurfaceTexture= new SurfaceTexture(mSquare.mTextureHandle);
             runOnUiThread(new Runnable() {
@@ -199,9 +192,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
-            Matrix.setLookAtM(mViewMatrix, 0, 0, 0, -3, 0f, 0f, 0f, 0f, 1.0f, 0.0f);
-            Matrix.multiplyMM(mMVPMatrix, 0, mProjectionMatrix, 0, mViewMatrix, 0);
-            mSquare.draw(mMVPMatrix, mTransformationMatrix);
+            mSquare.draw(GlUtil.IDENTITY_MATRIX, mTransformationMatrix);
         }
     }
 
