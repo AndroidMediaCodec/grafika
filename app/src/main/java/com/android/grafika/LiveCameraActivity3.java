@@ -33,10 +33,7 @@ import android.widget.TextView;
 import com.android.grafika.gles.GlUtil;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.nio.ShortBuffer;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -210,67 +207,61 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private final String vertexShaderCode =
                 "uniform mat4 uMVPMatrix;" +
                 "attribute vec4 aPosition;" +
+                "attribute vec2 aTextureCoord;\n" +
+                "varying vec2 vTextureCoord;\n" +
                 "void main() {" +
+                "  vTextureCoord = aTextureCoord;" +
                 "  gl_Position = uMVPMatrix * aPosition;" +
                 "}";
 
         private final String fragmentShaderCode =
+                "#extension GL_OES_EGL_image_external : require\n" +
                 "precision mediump float;" +
-                "uniform vec4 uColor;" +
+                "varying vec2 vTextureCoord;\n" +
+                "uniform samplerExternalOES uTexture;\n" +
                 "void main() {" +
-                "  gl_FragColor = uColor;" +
+                "    gl_FragColor = texture2D(uTexture, vTextureCoord);\n" +
                 "}";
 
         private final FloatBuffer vertexBuffer;
-        private final ShortBuffer drawListBuffer;
+        private final FloatBuffer textureBuffer;
         private final int mProgram;
         private int mPositionHandle;
-        private int mColorHandle;
         private int mMVPMatrixHandle;
         public int mTextureHandle;
 
         private static final int SIZEOF_FLOAT = Float.SIZE/8;
-        private static final int SIZEOF_SHORT = Short.SIZE/8;
 
-        // number of coordinates per vertex in this array
-        static final int COORDS_PER_VERTEX = 3;
-        static float squareCoords[] = {
-                -1.0f,  1.0f, 0.0f,   // top left
-                -1.0f, -1.0f, 0.0f,   // bottom left
-                 1.0f, -1.0f, 0.0f,   // bottom right
-                 1.0f,  1.0f, 0.0f }; // top right
+        static final int COORDS_PER_VERTEX = 2;
+        static float vertextCoords[] = {
+                -1.0f, -1.0f,   // 0 bottom left
+                 1.0f, -1.0f,   // 1 bottom right
+                -1.0f, 1.0f,    // 2 top left
+                 1.0f, 1.0f,    // 3 top right
+        };
+        private final int vertexCount= vertextCoords.length / COORDS_PER_VERTEX;
         private final int vertexStride = COORDS_PER_VERTEX * SIZEOF_FLOAT;
-        private final short drawOrder[] = { 0, 1, 2, 0, 2, 3 }; // order to draw vertices
 
-        float color[] = { 0.2f, 0.709803922f, 0.898039216f, 1.0f };
+        static final int COORDS_PER_TEXTURE = 2;
+        static float textureCoords[]= {
+                0.0f, 0.0f,     // 0 bottom left
+                1.0f, 0.0f,     // 1 bottom right
+                0.0f, 1.0f,     // 2 top left
+                1.0f, 1.0f      // 3 top right
+        };
+        private final int textureStride = COORDS_PER_TEXTURE * SIZEOF_FLOAT;
 
         /**
          * Sets up the drawing object data for use in an OpenGL ES context.
          */
         public GlRectangle() {
-            // initialize vertex byte buffer for shape coordinates
-            ByteBuffer bb = ByteBuffer.allocateDirect(squareCoords.length * SIZEOF_FLOAT);
-            bb.order(ByteOrder.nativeOrder());
-            vertexBuffer = bb.asFloatBuffer();
-            vertexBuffer.put(squareCoords);
-            vertexBuffer.position(0);
-
-            // initialize byte buffer for the draw list
-            ByteBuffer dlb = ByteBuffer.allocateDirect(drawOrder.length * SIZEOF_SHORT);
-            dlb.order(ByteOrder.nativeOrder());
-            drawListBuffer = dlb.asShortBuffer();
-            drawListBuffer.put(drawOrder);
-            drawListBuffer.position(0);
-
+            vertexBuffer= GlUtil.createFloatBuffer(vertextCoords);
+            textureBuffer= GlUtil.createFloatBuffer(textureCoords);
             mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
 
             // prepare shaders and OpenGL program
-            int vertexShader = GlUtil.loadShader(
-                    GLES20.GL_VERTEX_SHADER,
-                    vertexShaderCode);
-            int fragmentShader = GlUtil.loadShader(
-                    GLES20.GL_FRAGMENT_SHADER,
-                    fragmentShaderCode);
+            int vertexShader = GlUtil.loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
+            int fragmentShader = GlUtil.loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);
 
             mProgram = GLES20.glCreateProgram();             // create empty OpenGL Program
             GLES20.glAttachShader(mProgram, vertexShader);   // add the vertex shader to program
@@ -280,6 +271,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         public void draw(float[] mvpMatrix) {
             GLES20.glUseProgram(mProgram);
+
+            GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, mTextureHandle);
 
             // aPosition
             mPositionHandle = GLES20.glGetAttribLocation(mProgram, "aPosition");
@@ -292,25 +286,31 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                     vertexStride, vertexBuffer);
             GlUtil.checkGlError("glVertexAttribPointer");
 
-            // uColor
-            mColorHandle = GLES20.glGetUniformLocation(mProgram, "uColor");
-            GlUtil.checkLocation(mColorHandle, "uColor");
-            GLES20.glUniform4fv(mColorHandle, 1, color, 0);
+            // aTextureCoord
+            int textureCoordHandle = GLES20.glGetAttribLocation(mProgram, "aTextureCoord");
+            GlUtil.checkLocation(textureCoordHandle, "aTextureCoord");
+            GLES20.glEnableVertexAttribArray(textureCoordHandle);
+            GlUtil.checkGlError("glEnableVertexAttribArray");
+            GLES20.glVertexAttribPointer(
+                    textureCoordHandle, COORDS_PER_TEXTURE,
+                    GLES20.GL_FLOAT, false,
+                    textureStride, textureBuffer);
+            GlUtil.checkGlError("glVertexAttribPointer");
 
-            // transformation matrix
+            // uMVPMatrix
             mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uMVPMatrix");
             GlUtil.checkGlError("glGetUniformLocation");
             GLES20.glUniformMatrix4fv(mMVPMatrixHandle, 1, false, mvpMatrix, 0);
             GlUtil.checkGlError("glUniformMatrix4fv");
 
             // Draw the square
-            GLES20.glDrawElements(
-                    GLES20.GL_TRIANGLES, drawOrder.length,
-                    GLES20.GL_UNSIGNED_SHORT, drawListBuffer);
+            GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, vertexCount);
             GlUtil.checkGlError("glDrawElements");
 
             // cleanup
             GLES20.glDisableVertexAttribArray(mPositionHandle);
+            GLES20.glDisableVertexAttribArray(textureCoordHandle);
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);
             GLES20.glUseProgram(0);
         }
 
