@@ -108,16 +108,16 @@ public class LiveCameraActivity3 extends Activity {
 
         private final String vertexShaderCode =
                 "uniform mat4 uMVPMatrix;" +
-                "attribute vec4 vPosition;" +
+                "attribute vec4 aPosition;" +
                 "void main() {" +
-                "  gl_Position = uMVPMatrix * vPosition;" +
+                "  gl_Position = uMVPMatrix * aPosition;" +
                 "}";
 
         private final String fragmentShaderCode =
                 "precision mediump float;" +
-                "uniform vec4 vColor;" +
+                "uniform vec4 uColor;" +
                 "void main() {" +
-                "  gl_FragColor = vColor;" +
+                "  gl_FragColor = uColor;" +
                 "}";
 
         private final FloatBuffer vertexBuffer;
@@ -181,29 +181,24 @@ public class LiveCameraActivity3 extends Activity {
             // Add program to OpenGL environment
             GLES20.glUseProgram(mProgram);
 
-            // get handle to vertex shader's vPosition member
-            mPositionHandle = GLES20.glGetAttribLocation(mProgram, "vPosition");
-
-            // Enable a handle to the triangle vertices
+            // aPosition
+            mPositionHandle = GLES20.glGetAttribLocation(mProgram, "aPosition");
+            GlUtil.checkLocation(mPositionHandle, "aPosition");
             GLES20.glEnableVertexAttribArray(mPositionHandle);
-
-            // Prepare the triangle coordinate data
+            GlUtil.checkGlError("glEnableVertexAttribArray");
             GLES20.glVertexAttribPointer(
                     mPositionHandle, COORDS_PER_VERTEX,
                     GLES20.GL_FLOAT, false,
                     vertexStride, vertexBuffer);
+            GlUtil.checkGlError("glVertexAttribPointer");
 
-            // get handle to fragment shader's vColor member
-            mColorHandle = GLES20.glGetUniformLocation(mProgram, "vColor");
-
-            // Set color for drawing the triangle
+            // vColor
+            mColorHandle = GLES20.glGetUniformLocation(mProgram, "uColor");
             GLES20.glUniform4fv(mColorHandle, 1, color, 0);
 
-            // get handle to shape's transformation matrix
+            // transformation matrix
             mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uMVPMatrix");
             GlUtil.checkGlError("glGetUniformLocation");
-
-            // Apply the projection and view transformation
             GLES20.glUniformMatrix4fv(mMVPMatrixHandle, 1, false, mvpMatrix, 0);
             GlUtil.checkGlError("glUniformMatrix4fv");
 
