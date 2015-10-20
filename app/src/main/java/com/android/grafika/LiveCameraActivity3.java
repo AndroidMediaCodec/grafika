@@ -234,13 +234,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private static final int SIZEOF_FLOAT = Float.SIZE/8;
 
         static final int COORDS_PER_VERTEX = 2;
-        static float vertextCoords[] = {
+        static float vertexCoords[] = {
                 -1.0f, -1.0f,   // 0 bottom left
                  1.0f, -1.0f,   // 1 bottom right
                 -1.0f, 1.0f,    // 2 top left
                  1.0f, 1.0f,    // 3 top right
         };
-        private final int vertexCount= vertextCoords.length / COORDS_PER_VERTEX;
+        private final int vertexCount= vertexCoords.length / COORDS_PER_VERTEX;
         private final int vertexStride = COORDS_PER_VERTEX * SIZEOF_FLOAT;
 
         static final int COORDS_PER_TEXTURE = 2;
@@ -256,7 +256,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
          * Sets up the drawing object data for use in an OpenGL ES context.
          */
         public GlRectangle() {
-            vertexBuffer= GlUtil.createFloatBuffer(vertextCoords);
+            vertexBuffer= GlUtil.createFloatBuffer(vertexCoords);
             textureBuffer= GlUtil.createFloatBuffer(textureCoords);
             mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
 
