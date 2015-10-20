@@ -263,7 +263,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         private static final int MSG_START_RECORDING = 0;
         private static final int MSG_STOP_RECORDING = 1;
-        private static final int MSG_FRAME_AVAILABLE = 2;
+        private static final int MSG_RENDER_FRAME = 2;
 
         // @see https://www.khronos.org/registry/egl/extensions/ANDROID/EGL_ANDROID_recordable.txt
         private static final int EGL_RECORDABLE_ANDROID = 0x3142;
@@ -291,7 +291,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                         case MSG_START_RECORDING:
                             onStartRecording((EGLContext)obj, inputMessage.arg1);
                             break;
-                        case MSG_FRAME_AVAILABLE:
+                        case MSG_RENDER_FRAME:
                             // un-bitshift the timestamp
                             long timestamp = (((long) inputMessage.arg1) << 32) |
                                     (((long) inputMessage.arg2) & 0xffffffffL);
@@ -319,7 +319,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         public void renderFrame(float[] transform, long timestamp) {
             // bitshift the timestamp so that it can fit in arg1/arg2
-            _handler.sendMessage(_handler.obtainMessage(MSG_FRAME_AVAILABLE,
+            _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_FRAME,
                     (int) (timestamp >> 32), (int) timestamp, transform));
         }
 
