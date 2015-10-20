@@ -63,6 +63,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
     private static final String TAG = MainActivity.TAG;
 
     private GLSurfaceView mGLSurfaceView;
+    private GLPreviewRenderer mPreviewRenderer;
 
     private Camera mCamera;
 
@@ -75,7 +76,8 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         mGLSurfaceView= new GLSurfaceView(this);
         mGLSurfaceView.setEGLContextClientVersion(2);
-        mGLSurfaceView.setRenderer(new GLPreviewRenderer());
+        mPreviewRenderer= new GLPreviewRenderer();
+        mGLSurfaceView.setRenderer(mPreviewRenderer);
         mGLSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
         view.addView(mGLSurfaceView);
 
@@ -100,6 +102,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         super.onPause();
         mCamera.stopPreview();
         mCamera.release();
+        mPreviewRenderer.release();
     }
 
     private void openCamera() {
@@ -227,6 +230,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             mPreview.draw(GlUtil.IDENTITY_MATRIX, mTransformationMatrix);
         }
+
+        public void release() {
+            mEncoder.stop();
+        }
     }
 
     public class AVEncoder {
@@ -235,6 +242,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         protected MediaMuxer _muxer;
         protected File _outputFile;
+        protected int _videoTrackIndex;
 
         private static final String VIDEO_MIME_TYPE = "video/avc";    // H.264 Advanced Video Coding
         private static final int VIDEO_FRAME_RATE = 30;               // 30fps
@@ -250,7 +258,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private static final int MSG_START_RECORDING = 0;
         private static final int MSG_STOP_RECORDING = 1;
         private static final int MSG_FRAME_AVAILABLE = 2;
-        private static final int MSG_QUIT = 5;
 
         // @see https://www.khronos.org/registry/egl/extensions/ANDROID/EGL_ANDROID_recordable.txt
         private static final int EGL_RECORDABLE_ANDROID = 0x3142;
@@ -280,7 +287,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                             onRenderFrame((float[]) obj, timestamp);
                             break;
                         case MSG_STOP_RECORDING:
-                            Looper.myLooper().quit();
+                            onStopRecording();
                             break;
                     }
                 }
@@ -290,7 +297,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         public void stop() {
             try {
-                _handler.sendMessage(_handler.obtainMessage(MSG_QUIT));
+                _handler.sendMessage(_handler.obtainMessage(MSG_STOP_RECORDING));
                 _worker.join();
             } catch (InterruptedException e) {
             }
@@ -334,15 +341,50 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             return codec;
         }
 
-        protected void flushVideoCodec() {
+        protected void flushVideoCodec(boolean drain) {
             final int TIMEOUT_USEC = 10000;
             MediaCodec.BufferInfo bufferInfo= new MediaCodec.BufferInfo();
             ByteBuffer[] encoderOutputBuffers = _videoCodec.getOutputBuffers();
-            int encoderStatus = _videoCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
-            if (encoderStatus < 0) {
 
-            } else {
-                _videoCodec.releaseOutputBuffer(encoderStatus, false);
+            if (drain) {
+                _videoCodec.signalEndOfInputStream();
+            }
+
+            boolean moreData= true;
+
+            while (moreData) {
+                int encoderStatus = _videoCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
+                if (encoderStatus < 0) {
+                    switch (encoderStatus) {
+                        case MediaCodec.INFO_TRY_AGAIN_LATER:
+                            // if we're not draining, then stop
+                            moreData= drain;
+                            break;
+                        case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
+                            // start the muxer
+                            MediaFormat format = _videoCodec.getOutputFormat();
+                            _videoTrackIndex = _muxer.addTrack(format);
+                            _muxer.start();
+                            break;
+                    }
+                } else {
+                    try {
+                        ByteBuffer encodedData = encoderOutputBuffers[encoderStatus];
+                        if (bufferInfo.size > 0 && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                            // adjust the ByteBuffer values to match BufferInfo (not needed?)
+                            encodedData.position(bufferInfo.offset);
+                            encodedData.limit(bufferInfo.offset + bufferInfo.size);
+                            _muxer.writeSampleData(_videoTrackIndex, encodedData, bufferInfo);
+                        }
+                    } finally {
+                        _videoCodec.releaseOutputBuffer(encoderStatus, false);
+
+                        // stop when we're draining and reach EOS
+                        if (drain && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                            moreData= false;
+                        }
+                    }
+                }
             }
         }
 
@@ -380,9 +422,17 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _preview= new GLPreview(textureHandle);
         }
 
+        protected void onStopRecording() {
+            Log.d(TAG, "onStopRecording");
+
+            flushVideoCodec(true);
+            _muxer.stop();
+            Looper.myLooper().quit();
+        }
+
         protected void onRenderFrame(float[] transformation, long timestamp) {
             Log.d(TAG, "onRenderFrame");
-            flushVideoCodec();
+            flushVideoCodec(false);
 
             _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
 
