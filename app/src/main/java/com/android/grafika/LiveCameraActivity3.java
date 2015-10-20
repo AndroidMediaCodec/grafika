@@ -473,9 +473,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         static final int COORDS_PER_VERTEX = 2;
         static float vertexCoords[] = {
                 -1.0f, -1.0f,   // 0 bottom left
-                1.0f, -1.0f,   // 1 bottom right
-                -1.0f, 1.0f,    // 2 top left
-                1.0f, 1.0f,    // 3 top right
+                 1.0f, -1.0f,   // 1 bottom right
+                -1.0f,  1.0f,   // 2 top left
+                 1.0f,  1.0f,   // 3 top right
         };
         private final int vertexCount= vertexCoords.length / COORDS_PER_VERTEX;
         private final int vertexStride = COORDS_PER_VERTEX * SIZEOF_FLOAT;
