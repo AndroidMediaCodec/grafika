@@ -434,6 +434,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             Log.d(TAG, "onRenderFrame");
             flushVideoCodec(false);
 
+            // ignore zero timestamps, as it can really throw off the MediaCodec
+            if (timestamp == 0) return;
+
             _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
 
             EGLExt.eglPresentationTimeANDROID(_eglDisplay, _encodingSurface, timestamp);
