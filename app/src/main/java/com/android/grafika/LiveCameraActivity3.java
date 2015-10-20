@@ -20,19 +20,35 @@ import android.app.Activity;
 import android.content.pm.ActivityInfo;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
+import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
+import android.media.MediaFormat;
+import android.media.MediaMuxer;
+import android.opengl.EGL14;
+import android.opengl.EGLContext;
+import android.opengl.EGLDisplay;
+import android.opengl.EGLExt;
+import android.opengl.EGLSurface;
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
+import android.os.HandlerThread;
+import android.os.Looper;
+import android.os.Message;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.Surface;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.os.Handler;
 
 import com.android.grafika.gles.GlUtil;
 
+import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.FloatBuffer;
 
 import javax.microedition.khronos.egl.EGLConfig;
@@ -168,12 +184,21 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         SurfaceTexture mSurfaceTexture;
         private final float[] mTransformationMatrix = new float[16];
 
+        AVEncoder mEncoder;
+
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             Log.d(TAG, "onSurfaceCreated");
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             mPreview = new GLPreview();
             mSurfaceTexture= new SurfaceTexture(mPreview.mTextureHandle);
+
+            try {
+                mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"));
+                mEncoder.start(EGL14.eglGetCurrentContext());
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override
@@ -195,6 +220,8 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             mSurfaceTexture.updateTexImage();
             mSurfaceTexture.getTransformMatrix(mTransformationMatrix);
+
+            mEncoder.renderFrame(mTransformationMatrix, mSurfaceTexture.getTimestamp());
 
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
@@ -321,7 +348,167 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);
             GLES20.glUseProgram(0);
         }
+    }
 
+    public class AVEncoder {
+        protected HandlerThread _worker;
+        protected Handler _handler;
+
+        protected MediaMuxer _muxer;
+        protected File _outputFile;
+
+        private static final String VIDEO_MIME_TYPE = "video/avc";    // H.264 Advanced Video Coding
+        private static final int VIDEO_FRAME_RATE = 30;               // 30fps
+        private static final int VIDEO_IFRAME_INTERVAL = 5;           // 5 seconds between I-frames
+        private static final int VIDEO_BIT_RATE= 1000000;
+        protected MediaCodec _videoCodec;
+        protected android.opengl.EGLConfig _eglConfig;
+        protected EGLDisplay _eglDisplay= EGL14.EGL_NO_DISPLAY;
+        protected EGLContext _eglContext= EGL14.EGL_NO_CONTEXT;
+        protected EGLSurface _encodingSurface;
+        GLPreview _preview;
+
+        private static final int MSG_START_RECORDING = 0;
+        private static final int MSG_STOP_RECORDING = 1;
+        private static final int MSG_FRAME_AVAILABLE = 2;
+        private static final int MSG_QUIT = 5;
+
+        // @see https://www.khronos.org/registry/egl/extensions/ANDROID/EGL_ANDROID_recordable.txt
+        private static final int EGL_RECORDABLE_ANDROID = 0x3142;
+
+        public AVEncoder(File outputFile) throws IOException {
+            _outputFile= outputFile;
+            _muxer = new MediaMuxer(_outputFile.toString(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+        }
+
+        public void start(EGLContext eglContext) {
+            _worker= new HandlerThread(getClass().getSimpleName() + "Worker");
+            _worker.start();
+            _handler= new Handler(_worker.getLooper()) {
+                @Override  // runs on encoder thread
+                public void handleMessage(Message inputMessage) {
+                    int what = inputMessage.what;
+                    Object obj = inputMessage.obj;
+
+                    switch (what) {
+                        case MSG_START_RECORDING:
+                            onStartRecording((EGLContext)obj);
+                            break;
+                        case MSG_FRAME_AVAILABLE:
+                            long timestamp = (((long) inputMessage.arg1) << 32) |
+                                    (((long) inputMessage.arg2) & 0xffffffffL);
+                            onRenderFrame((float[]) obj, timestamp);
+                            break;
+                        case MSG_STOP_RECORDING:
+                            Looper.myLooper().quit();
+                            break;
+                    }
+                }
+            };
+            _handler.sendMessage(_handler.obtainMessage(MSG_START_RECORDING, eglContext));
+        }
+
+        public void stop() {
+            try {
+                _handler.sendMessage(_handler.obtainMessage(MSG_QUIT));
+                _worker.join();
+            } catch (InterruptedException e) {
+            }
+            _videoCodec.release();
+        }
+
+        public void renderFrame(float[] transform, long timestamp) {
+            // bitshift the timestamp so that it can fit in arg1/arg2
+            _handler.sendMessage(_handler.obtainMessage(MSG_FRAME_AVAILABLE,
+                    (int) (timestamp >> 32), (int) timestamp, transform));
+        }
+
+        private android.opengl.EGLConfig getConfig() {
+            int[] attribList = {
+                    EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8,
+                    EGL14.EGL_BLUE_SIZE, 8,
+                    EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                    EGL_RECORDABLE_ANDROID, 1,
+                    EGL14.EGL_NONE
+            };
+            android.opengl.EGLConfig[] configs = new android.opengl.EGLConfig[1];
+            int[] numConfigs = new int[1];
+            if (!EGL14.eglChooseConfig(_eglDisplay, attribList, 0, configs, 0, configs.length, numConfigs, 0)) {
+                throw new RuntimeException("eglChooseConfig failed " + Integer.toHexString(EGL14.eglGetError()));
+            }
+            return configs[0];
+        }
+
+        protected MediaCodec createVideoCodec(int width, int height) {
+            MediaFormat format = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, width, height);
+
+            format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+            format.setInteger(MediaFormat.KEY_BIT_RATE, VIDEO_BIT_RATE);
+            format.setInteger(MediaFormat.KEY_FRAME_RATE, VIDEO_FRAME_RATE);
+            format.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, VIDEO_IFRAME_INTERVAL);
+
+            MediaCodec codec= MediaCodec.createEncoderByType(VIDEO_MIME_TYPE);
+            codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+            return codec;
+        }
+
+        protected void flushVideoCodec() {
+            final int TIMEOUT_USEC = 10000;
+            MediaCodec.BufferInfo bufferInfo= new MediaCodec.BufferInfo();
+            ByteBuffer[] encoderOutputBuffers = _videoCodec.getOutputBuffers();
+            int encoderStatus = _videoCodec.dequeueOutputBuffer(bufferInfo, TIMEOUT_USEC);
+            if (encoderStatus < 0) {
+
+            } else {
+                _videoCodec.releaseOutputBuffer(encoderStatus, false);
+            }
+        }
+
+        protected void onStartRecording(EGLContext eglContext) {
+            Log.d(TAG, "onStartRecording");
+
+            // create an EGLContext from the input context
+            _eglDisplay= EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
+            _eglConfig= getConfig();
+            _eglContext= EGL14.eglCreateContext(_eglDisplay,
+                    _eglConfig, eglContext,
+                    new int[] { EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE },
+                    0);
+            if (_eglContext == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
+                throw new RuntimeException("eglCreateContext failed");
+            }
+
+            // create a video codec
+            _videoCodec= createVideoCodec(640, 480);
+            Surface codecSurface= _videoCodec.createInputSurface();
+            _videoCodec.start();
+
+            // create an EGLSurface bound to the MediaCodec surface
+            _encodingSurface = EGL14.eglCreateWindowSurface(_eglDisplay,
+                    _eglConfig, codecSurface,
+                    new int[]{ EGL14.EGL_NONE }, 0);
+            if (_encodingSurface == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
+                throw new RuntimeException("eglCreateWindowSurface failed");
+            }
+            if (!EGL14.eglMakeCurrent(_eglDisplay, _encodingSurface, _encodingSurface, _eglContext)) {
+                throw new RuntimeException("eglMakeCurrent failed");
+            }
+
+            // create an OpenGL program for rendering
+            _preview= new GLPreview();
+        }
+
+        protected void onRenderFrame(float[] transformation, long timestamp) {
+            Log.d(TAG, "onRenderFrame");
+            flushVideoCodec();
+
+            _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
+
+            EGLExt.eglPresentationTimeANDROID(_eglDisplay, _encodingSurface, timestamp);
+            boolean ok= EGL14.eglSwapBuffers(_eglDisplay, _encodingSurface);
+        }
     }
 
 }
