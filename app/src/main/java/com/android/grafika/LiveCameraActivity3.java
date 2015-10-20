@@ -59,7 +59,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         mGLSurfaceView= new GLSurfaceView(this);
         mGLSurfaceView.setEGLContextClientVersion(2);
-        mGLSurfaceView.setRenderer(new GLRenderer());
+        mGLSurfaceView.setRenderer(new GLPreviewRenderer());
         mGLSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
         view.addView(mGLSurfaceView);
 
@@ -161,10 +161,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         mGLSurfaceView.requestRender();
     }
 
-    private class GLRenderer implements GLSurfaceView.Renderer {
+    private class GLPreviewRenderer implements GLSurfaceView.Renderer {
         private final float[] mMVPMatrix = new float[16];
 
-        GlRectangle mSquare;
+        GLPreview mPreview;
         SurfaceTexture mSurfaceTexture;
         private final float[] mTransformationMatrix = new float[16];
 
@@ -172,8 +172,8 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             Log.d(TAG, "onSurfaceCreated");
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            mSquare= new GlRectangle();
-            mSurfaceTexture= new SurfaceTexture(mSquare.mTextureHandle);
+            mPreview = new GLPreview();
+            mSurfaceTexture= new SurfaceTexture(mPreview.mTextureHandle);
         }
 
         @Override
@@ -198,11 +198,11 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
 
-            mSquare.draw(GlUtil.IDENTITY_MATRIX, mTransformationMatrix);
+            mPreview.draw(GlUtil.IDENTITY_MATRIX, mTransformationMatrix);
         }
     }
 
-    public static class GlRectangle {
+    public static class GLPreview {
 
         private final String vertexShaderCode =
                 "uniform mat4 uMVPMatrix;" +
@@ -253,7 +253,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         /**
          * Sets up the drawing object data for use in an OpenGL ES context.
          */
-        public GlRectangle() {
+        public GLPreview() {
             vertexBuffer= GlUtil.createFloatBuffer(vertexCoords);
             textureBuffer= GlUtil.createFloatBuffer(textureCoords);
             mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
