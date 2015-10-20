@@ -227,7 +227,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private final FloatBuffer vertexBuffer;
         private final FloatBuffer textureBuffer;
         private final int mProgram;
-        private int mPositionHandle;
+        private int mPositionHandle, mTextureCoordHandle, mTexMatrixHandle;
         private int mMVPMatrixHandle;
         public int mTextureHandle;
 
@@ -268,17 +268,26 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             GLES20.glAttachShader(mProgram, vertexShader);   // add the vertex shader to program
             GLES20.glAttachShader(mProgram, fragmentShader); // add the fragment shader to program
             GLES20.glLinkProgram(mProgram);                  // create OpenGL program executables
+
+            mPositionHandle = GLES20.glGetAttribLocation(mProgram, "aPosition");
+            GlUtil.checkLocation(mPositionHandle, "aPosition");
+
+            mTextureCoordHandle = GLES20.glGetAttribLocation(mProgram, "aTextureCoord");
+            GlUtil.checkLocation(mTextureCoordHandle, "aTextureCoord");
+
+            mTexMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uTexMatrix");
+            GlUtil.checkGlError("glGetUniformLocation");
+
+            mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uMVPMatrix");
+            GlUtil.checkGlError("glGetUniformLocation");
         }
 
         public void draw(float[] mvpMatrix, float[] textMatrix) {
             GLES20.glUseProgram(mProgram);
-
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, mTextureHandle);
 
             // aPosition
-            mPositionHandle = GLES20.glGetAttribLocation(mProgram, "aPosition");
-            GlUtil.checkLocation(mPositionHandle, "aPosition");
             GLES20.glEnableVertexAttribArray(mPositionHandle);
             GlUtil.checkGlError("glEnableVertexAttribArray");
             GLES20.glVertexAttribPointer(
@@ -288,25 +297,19 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             GlUtil.checkGlError("glVertexAttribPointer");
 
             // aTextureCoord
-            int textureCoordHandle = GLES20.glGetAttribLocation(mProgram, "aTextureCoord");
-            GlUtil.checkLocation(textureCoordHandle, "aTextureCoord");
-            GLES20.glEnableVertexAttribArray(textureCoordHandle);
+            GLES20.glEnableVertexAttribArray(mTextureCoordHandle);
             GlUtil.checkGlError("glEnableVertexAttribArray");
             GLES20.glVertexAttribPointer(
-                    textureCoordHandle, COORDS_PER_TEXTURE,
+                    mTextureCoordHandle, COORDS_PER_TEXTURE,
                     GLES20.GL_FLOAT, false,
                     textureStride, textureBuffer);
             GlUtil.checkGlError("glVertexAttribPointer");
 
             // uTexMatrix
-            int uTexMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uTexMatrix");
-            GlUtil.checkGlError("glGetUniformLocation");
-            GLES20.glUniformMatrix4fv(uTexMatrixHandle, 1, false, textMatrix, 0);
+            GLES20.glUniformMatrix4fv(mTexMatrixHandle, 1, false, textMatrix, 0);
             GlUtil.checkGlError("glUniformMatrix4fv");
 
             // uMVPMatrix
-            mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uMVPMatrix");
-            GlUtil.checkGlError("glGetUniformLocation");
             GLES20.glUniformMatrix4fv(mMVPMatrixHandle, 1, false, mvpMatrix, 0);
             GlUtil.checkGlError("glUniformMatrix4fv");
 
@@ -316,7 +319,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             // cleanup
             GLES20.glDisableVertexAttribArray(mPositionHandle);
-            GLES20.glDisableVertexAttribArray(textureCoordHandle);
+            GLES20.glDisableVertexAttribArray(mTextureCoordHandle);
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);
             GLES20.glUseProgram(0);
         }
