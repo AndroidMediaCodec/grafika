@@ -27,6 +27,7 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.ViewGroup;
+import android.widget.FrameLayout;
 import android.widget.TextView;
 
 import com.android.grafika.gles.GlUtil;
@@ -54,12 +55,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         super.onCreate(savedInstanceState);
         Log.d(TAG, getClass().getSimpleName() + " onCreate");
 
+        ViewGroup view= (ViewGroup)findViewById(android.R.id.content);
+
         mGLSurfaceView= new GLSurfaceView(this);
         mGLSurfaceView.setEGLContextClientVersion(2);
         mGLSurfaceView.setRenderer(new GLRenderer());
         mGLSurfaceView.setRenderMode(GLSurfaceView.RENDERMODE_WHEN_DIRTY);
-
-        ((ViewGroup)findViewById(android.R.id.content)).addView(mGLSurfaceView);
+        view.addView(mGLSurfaceView);
 
         // show that we can overlay stuff on the camera preview
         TextView textView= new TextView(this);
@@ -142,6 +144,8 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             height = scaledHeight;
         }
 
+        mGLSurfaceView.setLayoutParams(new FrameLayout.LayoutParams(width, height, Gravity.CENTER));
+
         try {
             surfaceTexture.setOnFrameAvailableListener(this);
             mCamera.setPreviewTexture(surfaceTexture);
@@ -166,15 +170,17 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+            Log.d(TAG, "onSurfaceCreated");
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             mSquare= new GlRectangle();
+            mSurfaceTexture= new SurfaceTexture(mSquare.mTextureHandle);
         }
 
         @Override
         public void onSurfaceChanged(GL10 gl, final int width, final int height) {
+            Log.d(TAG, "onSurfaceChanged");
             GLES20.glViewport(0, 0, width, height);
 
-            mSurfaceTexture= new SurfaceTexture(mSquare.mTextureHandle);
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
