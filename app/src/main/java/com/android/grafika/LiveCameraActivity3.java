@@ -500,7 +500,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             vertexBuffer= GlUtil.createFloatBuffer(vertexCoords);
             textureBuffer= GlUtil.createFloatBuffer(textureCoords);
             if (textureHandle > 0) {
-                mTexMatrixHandle= textureHandle;
+                mTextureHandle= textureHandle;
             } else {
                 mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
             }
