@@ -198,7 +198,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             try {
                 mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"));
-                mEncoder.start(EGL14.eglGetCurrentContext(), mPreview.mTextureHandle);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -208,6 +207,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         public void onSurfaceChanged(GL10 gl, final int width, final int height) {
             Log.d(TAG, "onSurfaceChanged");
             GLES20.glViewport(0, 0, width, height);
+
+            if (!mEncoder.isRunning()) {
+                mEncoder.start(EGL14.eglGetCurrentContext(), mPreview.mTextureHandle, width, height);
+            }
 
             runOnUiThread(new Runnable() {
                 @Override
@@ -253,6 +256,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         protected EGLDisplay _eglDisplay= EGL14.EGL_NO_DISPLAY;
         protected EGLContext _eglContext= EGL14.EGL_NO_CONTEXT;
         protected EGLSurface _encodingSurface;
+        protected int _width, _height;
         GLPreview _preview;
 
         private static final int MSG_START_RECORDING = 0;
@@ -267,7 +271,11 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _muxer = new MediaMuxer(_outputFile.toString(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
         }
 
-        public void start(EGLContext eglContext, int textureHandle) {
+        public boolean isRunning() { return _worker != null; }
+
+        public void start(EGLContext eglContext, int textureHandle, int width, int height) {
+            _width= width;
+            _height= height;
             _worker= new HandlerThread(getClass().getSimpleName() + "Worker");
             _worker.start();
             _handler= new Handler(_worker.getLooper()) {
@@ -292,6 +300,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                     }
                 }
             };
+
             _handler.sendMessage(_handler.obtainMessage(MSG_START_RECORDING, textureHandle, 0, eglContext));
         }
 
@@ -301,6 +310,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                 _worker.join();
             } catch (InterruptedException e) {
             }
+            _worker= null;
             _videoCodec.release();
         }
 
@@ -403,7 +413,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             }
 
             // create a video codec
-            _videoCodec= createVideoCodec(640, 480);
+            _videoCodec= createVideoCodec(_width, _height);
             Surface codecSurface= _videoCodec.createInputSurface();
             _videoCodec.start();
 
