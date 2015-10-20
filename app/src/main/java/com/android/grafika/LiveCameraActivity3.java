@@ -445,23 +445,23 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         private final String vertexShaderCode =
                 "uniform mat4 uMVPMatrix;" +
-                        "uniform mat4 uTexMatrix;\n" +
-                        "attribute vec4 aPosition;" +
-                        "attribute vec4 aTextureCoord;\n" +
-                        "varying vec2 vTextureCoord;\n" +
-                        "void main() {" +
-                        "    gl_Position = uMVPMatrix * aPosition;" +
-                        "    vTextureCoord = (uTexMatrix * aTextureCoord).xy;\n" +
-                        "}";
+                "uniform mat4 uTexMatrix;\n" +
+                "attribute vec4 aPosition;" +
+                "attribute vec4 aTextureCoord;\n" +
+                "varying vec2 vTextureCoord;\n" +
+                "void main() {" +
+                "    gl_Position = uMVPMatrix * aPosition;" +
+                "    vTextureCoord = (uTexMatrix * aTextureCoord).xy;\n" +
+                "}";
 
         private final String fragmentShaderCode =
                 "#extension GL_OES_EGL_image_external : require\n" +
-                        "precision mediump float;" +
-                        "varying vec2 vTextureCoord;\n" +
-                        "uniform samplerExternalOES uTexture;\n" +
-                        "void main() {" +
-                        "    gl_FragColor = texture2D(uTexture, vTextureCoord);\n" +
-                        "}";
+                "precision mediump float;" +
+                "varying vec2 vTextureCoord;\n" +
+                "uniform samplerExternalOES uTexture;\n" +
+                "void main() {" +
+                "    gl_FragColor = texture2D(uTexture, vTextureCoord);\n" +
+                "}";
 
         private final FloatBuffer vertexBuffer;
         private final FloatBuffer textureBuffer;
