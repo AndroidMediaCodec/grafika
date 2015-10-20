@@ -226,7 +226,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         private final FloatBuffer vertexBuffer;
         private final FloatBuffer textureBuffer;
-        private final int mProgram;
+        private final int mProgramHandle;
         private int mPositionHandle, mTextureCoordHandle, mTexMatrixHandle;
         private int mMVPMatrixHandle;
         public int mTextureHandle;
@@ -264,26 +264,26 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             int vertexShader = GlUtil.loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
             int fragmentShader = GlUtil.loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentShaderCode);
 
-            mProgram = GLES20.glCreateProgram();             // create empty OpenGL Program
-            GLES20.glAttachShader(mProgram, vertexShader);   // add the vertex shader to program
-            GLES20.glAttachShader(mProgram, fragmentShader); // add the fragment shader to program
-            GLES20.glLinkProgram(mProgram);                  // create OpenGL program executables
+            mProgramHandle = GLES20.glCreateProgram();             // create empty OpenGL Program
+            GLES20.glAttachShader(mProgramHandle, vertexShader);   // add the vertex shader to program
+            GLES20.glAttachShader(mProgramHandle, fragmentShader); // add the fragment shader to program
+            GLES20.glLinkProgram(mProgramHandle);                  // create OpenGL program executables
 
-            mPositionHandle = GLES20.glGetAttribLocation(mProgram, "aPosition");
+            mPositionHandle = GLES20.glGetAttribLocation(mProgramHandle, "aPosition");
             GlUtil.checkLocation(mPositionHandle, "aPosition");
 
-            mTextureCoordHandle = GLES20.glGetAttribLocation(mProgram, "aTextureCoord");
+            mTextureCoordHandle = GLES20.glGetAttribLocation(mProgramHandle, "aTextureCoord");
             GlUtil.checkLocation(mTextureCoordHandle, "aTextureCoord");
 
-            mTexMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uTexMatrix");
+            mTexMatrixHandle = GLES20.glGetUniformLocation(mProgramHandle, "uTexMatrix");
             GlUtil.checkGlError("glGetUniformLocation");
 
-            mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgram, "uMVPMatrix");
+            mMVPMatrixHandle = GLES20.glGetUniformLocation(mProgramHandle, "uMVPMatrix");
             GlUtil.checkGlError("glGetUniformLocation");
         }
 
         public void draw(float[] mvpMatrix, float[] textMatrix) {
-            GLES20.glUseProgram(mProgram);
+            GLES20.glUseProgram(mProgramHandle);
             GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, mTextureHandle);
 
