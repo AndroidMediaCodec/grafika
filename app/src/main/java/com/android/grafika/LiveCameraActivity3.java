@@ -226,9 +226,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         private final FloatBuffer vertexBuffer;
         private final FloatBuffer textureBuffer;
-        private final int mProgramHandle;
-        private int mPositionHandle, mTextureCoordHandle, mTexMatrixHandle;
-        private int mMVPMatrixHandle;
+        private int mProgramHandle, mPositionHandle, mTextureCoordHandle, mMVPMatrixHandle, mTexMatrixHandle;
         public int mTextureHandle;
 
         private static final int SIZEOF_FLOAT = Float.SIZE/8;
