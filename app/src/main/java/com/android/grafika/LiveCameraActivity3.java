@@ -66,6 +66,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
     private GLPreviewRenderer mPreviewRenderer;
 
     private Camera mCamera;
+    private Camera.CameraInfo mCameraInfo;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -106,13 +107,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
     }
 
     private void openCamera() {
-        Camera.CameraInfo info = new Camera.CameraInfo();
+        mCameraInfo = new Camera.CameraInfo();
 
         // Try to find a front-facing camera (e.g. for videoconferencing).
         int numCameras = Camera.getNumberOfCameras();
         for (int i = 0; i < numCameras; i++) {
-            Camera.getCameraInfo(i, info);
-            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            Camera.getCameraInfo(i, mCameraInfo);
+            if (mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
                 mCamera = Camera.open(i);
                 break;
             }
@@ -128,12 +129,12 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         // deal with device rotation
 
         int imageRotation, displayRotation, deviceRotation = CameraUtils.getRotationDegrees(this);
-        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-            imageRotation = (info.orientation + deviceRotation) % 360;
+        if (mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            imageRotation = (mCameraInfo.orientation + deviceRotation) % 360;
             displayRotation = (360 - imageRotation) % 360; // compensate the mirror
         } else {
             imageRotation =
-                    displayRotation = (info.orientation - deviceRotation + 360) % 360;
+                    displayRotation = (mCameraInfo.orientation - deviceRotation + 360) % 360;
         }
 
         Camera.Parameters params = mCamera.getParameters();
@@ -193,11 +194,11 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             Log.d(TAG, "onSurfaceCreated");
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            mPreview = new GLPreview();
+            mPreview = new GLPreview(false);
             mSurfaceTexture= new SurfaceTexture(mPreview.mTextureHandle);
 
             try {
-                mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"));
+                mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"), mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -257,6 +258,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         protected EGLContext _eglContext= EGL14.EGL_NO_CONTEXT;
         protected EGLSurface _encodingSurface;
         protected int _width, _height;
+        protected boolean _mirror;
         GLPreview _preview;
 
         private static final int MSG_START_RECORDING = 0;
@@ -266,8 +268,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         // @see https://www.khronos.org/registry/egl/extensions/ANDROID/EGL_ANDROID_recordable.txt
         private static final int EGL_RECORDABLE_ANDROID = 0x3142;
 
-        public AVEncoder(File outputFile) throws IOException {
+        public AVEncoder(File outputFile, boolean mirror) throws IOException {
             _outputFile= outputFile;
+            _mirror= mirror;
             _muxer = new MediaMuxer(_outputFile.toString(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
         }
 
@@ -429,7 +432,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             }
 
             // create an OpenGL program for rendering
-            _preview= new GLPreview(textureHandle);
+            _preview= new GLPreview(_mirror, textureHandle);
         }
 
         protected void onStopRecording() {
@@ -500,18 +503,24 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                 0.0f, 1.0f,     // 2 top left
                 1.0f, 1.0f      // 3 top right
         };
+        static float textureCoordsMirrored[]= {
+                1.0f, 0.0f,     // 0 bottom left
+                0.0f, 0.0f,     // 1 bottom right
+                1.0f, 1.0f,     // 2 top left
+                0.0f, 1.0f      // 3 top right
+        };
         private final int textureStride = COORDS_PER_TEXTURE * SIZEOF_FLOAT;
 
         /**
          * Sets up the drawing object data for use in an OpenGL ES context.
          */
-        public GLPreview() {
-            this(0);
+        public GLPreview(boolean mirror) {
+            this(mirror, 0);
         }
 
-        public GLPreview(int textureHandle) {
+        public GLPreview(boolean mirror, int textureHandle) {
             vertexBuffer= GlUtil.createFloatBuffer(vertexCoords);
-            textureBuffer= GlUtil.createFloatBuffer(textureCoords);
+            textureBuffer= GlUtil.createFloatBuffer(mirror ? textureCoordsMirrored : textureCoords);
             if (textureHandle > 0) {
                 mTextureHandle= textureHandle;
             } else {
