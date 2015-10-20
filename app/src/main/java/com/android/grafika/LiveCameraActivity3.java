@@ -195,7 +195,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             try {
                 mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"));
-                mEncoder.start(EGL14.eglGetCurrentContext());
+                mEncoder.start(EGL14.eglGetCurrentContext(), mPreview.mTextureHandle);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -260,7 +260,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _muxer = new MediaMuxer(_outputFile.toString(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
         }
 
-        public void start(EGLContext eglContext) {
+        public void start(EGLContext eglContext, int textureHandle) {
             _worker= new HandlerThread(getClass().getSimpleName() + "Worker");
             _worker.start();
             _handler= new Handler(_worker.getLooper()) {
@@ -271,9 +271,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
                     switch (what) {
                         case MSG_START_RECORDING:
-                            onStartRecording((EGLContext)obj);
+                            onStartRecording((EGLContext)obj, inputMessage.arg1);
                             break;
                         case MSG_FRAME_AVAILABLE:
+                            // un-bitshift the timestamp
                             long timestamp = (((long) inputMessage.arg1) << 32) |
                                     (((long) inputMessage.arg2) & 0xffffffffL);
                             onRenderFrame((float[]) obj, timestamp);
@@ -284,7 +285,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                     }
                 }
             };
-            _handler.sendMessage(_handler.obtainMessage(MSG_START_RECORDING, eglContext));
+            _handler.sendMessage(_handler.obtainMessage(MSG_START_RECORDING, textureHandle, 0, eglContext));
         }
 
         public void stop() {
@@ -345,7 +346,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             }
         }
 
-        protected void onStartRecording(EGLContext eglContext) {
+        protected void onStartRecording(EGLContext eglContext, int textureHandle) {
             Log.d(TAG, "onStartRecording");
 
             // create an EGLContext from the input context
@@ -376,7 +377,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             }
 
             // create an OpenGL program for rendering
-            _preview= new GLPreview();
+            _preview= new GLPreview(textureHandle);
         }
 
         protected void onRenderFrame(float[] transformation, long timestamp) {
@@ -442,9 +443,17 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
          * Sets up the drawing object data for use in an OpenGL ES context.
          */
         public GLPreview() {
+            this(0);
+        }
+
+        public GLPreview(int textureHandle) {
             vertexBuffer= GlUtil.createFloatBuffer(vertexCoords);
             textureBuffer= GlUtil.createFloatBuffer(textureCoords);
-            mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
+            if (textureHandle > 0) {
+                mTexMatrixHandle= textureHandle;
+            } else {
+                mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
+            }
 
             // prepare shaders and OpenGL program
             int vertexShader = GlUtil.loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
