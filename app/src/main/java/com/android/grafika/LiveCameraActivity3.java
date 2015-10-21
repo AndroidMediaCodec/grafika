@@ -417,7 +417,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                 bos = new BufferedOutputStream(new FileOutputStream(file));
                 Bitmap bmp = Bitmap.createBitmap(_width, _height, Bitmap.Config.ARGB_8888);
                 bmp.copyPixelsFromBuffer(frame);
-                bmp.compress(Bitmap.CompressFormat.JPEG, 90, bos);
+                bmp.compress(Bitmap.CompressFormat.JPEG, 100, bos);
                 bmp.recycle();
             } finally {
                 if (bos != null) bos.close();
@@ -456,7 +456,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private static final String VIDEO_MIME_TYPE = "video/avc";    // H.264 Advanced Video Coding
         private static final int VIDEO_FRAME_RATE = 30;               // 30fps
         private static final int VIDEO_IFRAME_INTERVAL = 5;           // 5 seconds between I-frames
-        private static final int VIDEO_BIT_RATE= 1000000;
+        private static final int VIDEO_BIT_RATE= 10000000;
         protected MediaCodec _videoCodec;
         protected android.opengl.EGLConfig _eglConfig;
         protected EGLDisplay _eglDisplay= EGL14.EGL_NO_DISPLAY;
