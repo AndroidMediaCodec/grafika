@@ -201,12 +201,14 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             Log.d(TAG, "onSurfaceCreated");
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-            mPreview = new GLPreview(false);
+            mPreview = new GLPreview(GLPreview.FlipDirection.NONE);
             mSurfaceTexture= new SurfaceTexture(mPreview.mTextureHandle);
-            mConsumer= new PreviewConsumer(getExternalCacheDir(), false);
+            mConsumer= new PreviewConsumer(getExternalCacheDir(),
+                                           mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT ? GLPreview.FlipDirection.BOTH : GLPreview.FlipDirection.VERTICAL);
 
             try {
-                mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"), mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT);
+                mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"),
+                                         mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT ? GLPreview.FlipDirection.HORIZONTAL : GLPreview.FlipDirection.NONE);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -262,7 +264,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         protected HandlerThread _worker;
         protected Handler _handler;
         protected File _outputFile;
-        protected boolean _mirror;
+        protected GLPreview.FlipDirection _flipDirection;
 
         protected EGLSurface _eglSurface;
 
@@ -285,9 +287,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         private static final int SIZEOF_INT = Integer.SIZE/8;
 
-        public PreviewConsumer(File outputFile, boolean mirror) {
+        public PreviewConsumer(File outputFile, GLPreview.FlipDirection flipDirection) {
             _outputFile= outputFile;
-            _mirror= mirror;
+            _flipDirection= flipDirection;
         }
 
         public boolean isRunning() { return _worker != null; }
@@ -355,7 +357,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             mFrame= ByteBuffer.allocateDirect(_width * _height * SIZEOF_INT);
             mFrame.order(ByteOrder.LITTLE_ENDIAN);
 
-            _preview= new GLPreview(_mirror, textureHandle);
+            _preview= new GLPreview(GLPreview.FlipDirection.BOTH, textureHandle);
         }
 
         public void stop() {
@@ -461,7 +463,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         protected EGLContext _eglContext= EGL14.EGL_NO_CONTEXT;
         protected EGLSurface _eglSurface;
         protected int _width, _height;
-        protected boolean _mirror;
+        protected GLPreview.FlipDirection _flipDirection;
         GLPreview _preview;
 
         private static final int MSG_START_RECORDING = 0;
@@ -471,9 +473,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         // @see https://www.khronos.org/registry/egl/extensions/ANDROID/EGL_ANDROID_recordable.txt
         private static final int EGL_RECORDABLE_ANDROID = 0x3142;
 
-        public AVEncoder(File outputFile, boolean mirror) throws IOException {
+        public AVEncoder(File outputFile, GLPreview.FlipDirection flipDirection) throws IOException {
             _outputFile= outputFile;
-            _mirror= mirror;
+            _flipDirection= flipDirection;
             _muxer = new MediaMuxer(_outputFile.toString(), MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
         }
 
@@ -635,7 +637,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             }
 
             // create an OpenGL program for rendering
-            _preview= new GLPreview(_mirror, textureHandle);
+            _preview= new GLPreview(GLPreview.FlipDirection.HORIZONTAL, textureHandle);
         }
 
         protected void onStopRecording() {
@@ -661,6 +663,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
     }
 
     public static class GLPreview {
+
+        public enum FlipDirection {
+            NONE,
+            HORIZONTAL,
+            VERTICAL,
+            BOTH
+        }
 
         private final String vertexShaderCode =
                 "uniform mat4 uMVPMatrix;" +
@@ -700,35 +709,65 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private final int vertexStride = COORDS_PER_VERTEX * SIZEOF_FLOAT;
 
         static final int COORDS_PER_TEXTURE = 2;
-        static float textureCoords[]= {
+        static float textureCoordsFlipNone[]= {
                 0.0f, 0.0f,     // 0 bottom left
                 1.0f, 0.0f,     // 1 bottom right
                 0.0f, 1.0f,     // 2 top left
                 1.0f, 1.0f      // 3 top right
         };
-        static float textureCoordsMirrored[]= {
+        static float textureCoordsFlipHorizontal[]= {
                 1.0f, 0.0f,     // 0 bottom left
                 0.0f, 0.0f,     // 1 bottom right
                 1.0f, 1.0f,     // 2 top left
                 0.0f, 1.0f      // 3 top right
         };
+        static float textureCoordsFlipVertical[]= {
+                0.0f, 1.0f,     // 0 bottom left
+                1.0f, 1.0f,     // 1 bottom right
+                0.0f, 0.0f,     // 2 top left
+                1.0f, 0.0f      // 3 top right
+        };
+        static float textureCoordsFlipBoth[]= {
+                1.0f, 1.0f,     // 0 bottom left
+                0.0f, 1.0f,     // 1 bottom right
+                1.0f, 0.0f,     // 2 top left
+                0.0f, 0.0f      // 3 top right
+        };
+
         private final int textureStride = COORDS_PER_TEXTURE * SIZEOF_FLOAT;
 
         /**
          * Sets up the drawing object data for use in an OpenGL ES context.
          */
-        public GLPreview(boolean mirror) {
-            this(mirror, 0);
+        public GLPreview(FlipDirection flipDirection) {
+            this(flipDirection, 0);
         }
 
-        public GLPreview(boolean mirror, int textureHandle) {
-            vertexBuffer= GlUtil.createFloatBuffer(vertexCoords);
-            textureBuffer= GlUtil.createFloatBuffer(mirror ? textureCoordsMirrored : textureCoords);
+        public GLPreview(FlipDirection flipDirection, int textureHandle) {
+            switch (flipDirection) {
+                case HORIZONTAL:
+                    textureBuffer= GlUtil.createFloatBuffer(textureCoordsFlipHorizontal);
+                    break;
+                case VERTICAL:
+                    textureBuffer= GlUtil.createFloatBuffer(textureCoordsFlipVertical);
+                    break;
+                case BOTH:
+                    textureBuffer= GlUtil.createFloatBuffer(textureCoordsFlipBoth);
+                    break;
+                case NONE:
+                default:
+                    textureBuffer= GlUtil.createFloatBuffer(textureCoordsFlipNone);
+                    break;
+            }
+
             if (textureHandle > 0) {
                 mTextureHandle= textureHandle;
             } else {
                 mTextureHandle = GlUtil.createTextureObject(GLES11Ext.GL_TEXTURE_EXTERNAL_OES);
             }
+
+            vertexBuffer= GlUtil.createFloatBuffer(vertexCoords);
+
 
             // prepare shaders and OpenGL program
             int vertexShader = GlUtil.loadShader(GLES20.GL_VERTEX_SHADER, vertexShaderCode);
