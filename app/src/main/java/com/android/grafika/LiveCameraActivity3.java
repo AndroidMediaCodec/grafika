@@ -18,6 +18,7 @@ package com.android.grafika;
 
 import android.app.Activity;
 import android.content.pm.ActivityInfo;
+import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
 import android.media.MediaCodec;
@@ -33,6 +34,7 @@ import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
@@ -42,13 +44,15 @@ import android.view.Surface;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.TextView;
-import android.os.Handler;
 
 import com.android.grafika.gles.GlUtil;
 
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
 
 import javax.microedition.khronos.egl.EGLConfig;
@@ -60,7 +64,7 @@ import javax.microedition.khronos.opengles.GL10;
  * TODO: add options for different display sizes, frame rates, camera selection, etc.
  */
 public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFrameAvailableListener {
-    private static final String TAG = MainActivity.TAG;
+    private final String TAG= getClass().getSimpleName();
 
     private GLSurfaceView mGLSurfaceView;
     private GLPreviewRenderer mPreviewRenderer;
@@ -182,13 +186,16 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
     }
 
     private class GLPreviewRenderer implements GLSurfaceView.Renderer {
+        private final String TAG= getClass().getSimpleName();
         private final float[] mMVPMatrix = new float[16];
 
         GLPreview mPreview;
         SurfaceTexture mSurfaceTexture;
         private final float[] mTransformationMatrix = new float[16];
+        int _width, _height;
 
         AVEncoder mEncoder;
+        PreviewConsumer mConsumer;
 
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -196,6 +203,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             mPreview = new GLPreview(false);
             mSurfaceTexture= new SurfaceTexture(mPreview.mTextureHandle);
+            mConsumer= new PreviewConsumer(getExternalCacheDir(), false);
 
             try {
                 mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"), mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT);
@@ -208,9 +216,12 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         public void onSurfaceChanged(GL10 gl, final int width, final int height) {
             Log.d(TAG, "onSurfaceChanged");
             GLES20.glViewport(0, 0, width, height);
+            _width= width;
+            _height= height;
 
-            if (!mEncoder.isRunning()) {
+            if (!mConsumer.isRunning()) {
                 mEncoder.start(EGL14.eglGetCurrentContext(), mPreview.mTextureHandle, width, height);
+                mConsumer.start(EGL14.eglGetCurrentContext(), mPreview.mTextureHandle, width, height);
             }
 
             runOnUiThread(new Runnable() {
@@ -225,22 +236,214 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         public void onDrawFrame(GL10 gl) {
             Log.d(TAG, "onDrawFrame");
 
+            // update to the current incoming frame
             mSurfaceTexture.updateTexImage();
             mSurfaceTexture.getTransformMatrix(mTransformationMatrix);
+            long timestamp= mSurfaceTexture.getTimestamp();
 
-            mEncoder.renderFrame(mTransformationMatrix, mSurfaceTexture.getTimestamp());
+            // notify consumers of the new frame
+            mEncoder.renderFrame(mTransformationMatrix, timestamp);
+            mConsumer.renderFrame(mTransformationMatrix, timestamp);
 
+            // render the frame
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-
             mPreview.draw(GlUtil.IDENTITY_MATRIX, mTransformationMatrix);
         }
 
         public void release() {
             mEncoder.stop();
+            mConsumer.stop();
+        }
+    }
+
+    public class PreviewConsumer {
+        private final String TAG= getClass().getSimpleName();
+
+        protected HandlerThread _worker;
+        protected Handler _handler;
+        protected File _outputFile;
+        protected boolean _mirror;
+
+        protected EGLSurface _eglSurface;
+
+        ByteBuffer mFrame;
+        int _frameCount;
+        protected int _width, _height;
+
+        GLPreview _preview;
+
+        protected android.opengl.EGLConfig _eglConfig;
+        protected EGLDisplay _eglDisplay= EGL14.EGL_NO_DISPLAY;
+        protected EGLContext _eglContext= EGL14.EGL_NO_CONTEXT;
+
+        // @see https://www.khronos.org/registry/egl/extensions/ANDROID/EGL_ANDROID_recordable.txt
+        private static final int EGL_RECORDABLE_ANDROID = 0x3142;
+
+        private static final int MSG_START = 0;
+        private static final int MSG_STOP= 1;
+        private static final int MSG_RENDER_FRAME = 2;
+
+        private static final int SIZEOF_INT = Integer.SIZE/8;
+
+        public PreviewConsumer(File outputFile, boolean mirror) {
+            _outputFile= outputFile;
+            _mirror= mirror;
+        }
+
+        public boolean isRunning() { return _worker != null; }
+
+        public void start(EGLContext eglContext, int textureHandle, int width, int height) {
+            _width= width;
+            _height= height;
+            _worker= new HandlerThread(getClass().getSimpleName() + "Worker");
+            _worker.start();
+            _handler= new Handler(_worker.getLooper()) {
+                @Override  // runs on encoder thread
+                public void handleMessage(Message inputMessage) {
+                    int what = inputMessage.what;
+                    Object obj = inputMessage.obj;
+
+                    switch (what) {
+                        case MSG_START:
+                            onStart((EGLContext) obj, inputMessage.arg1);
+                            break;
+                        case MSG_RENDER_FRAME:
+                            // un-bitshift the timestamp
+                            long timestamp = (((long) inputMessage.arg1) << 32) |
+                                    (((long) inputMessage.arg2) & 0xffffffffL);
+                            onRenderFrame((float[]) obj, timestamp);
+                            break;
+                        case MSG_STOP:
+                            onStop();
+                            break;
+                    }
+                }
+            };
+
+            _handler.sendMessage(_handler.obtainMessage(MSG_START, textureHandle, 0, eglContext));
+        }
+
+        public void onStart(EGLContext eglContext, int textureHandle) {
+            // create an EGLContext from the input context
+            _eglDisplay= EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
+            _eglConfig= getConfig();
+            _eglContext= EGL14.eglCreateContext(_eglDisplay,
+                    _eglConfig, eglContext,
+                    new int[] { EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE },
+                    0);
+            if (_eglContext == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
+                throw new RuntimeException("eglCreateContext failed");
+            }
+
+            // create an off-screen EGLSurface
+            _eglSurface = EGL14.eglCreatePbufferSurface(_eglDisplay, _eglConfig,
+                                            new int[]{
+                                                EGL14.EGL_WIDTH, _width,
+                                                EGL14.EGL_HEIGHT, _height,
+                                                EGL14.EGL_TEXTURE_TARGET, EGL14.EGL_NO_TEXTURE,
+                                                EGL14.EGL_TEXTURE_FORMAT, EGL14.EGL_NO_TEXTURE,
+                                                EGL14.EGL_NONE
+                                            },
+                                            0);
+            if (_eglSurface == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
+                throw new RuntimeException("eglCreateWindowSurface failed " + Integer.toHexString(EGL14.eglGetError()));
+            }
+            if (!EGL14.eglMakeCurrent(_eglDisplay, _eglSurface, _eglSurface, _eglContext)) {
+                throw new RuntimeException("eglMakeCurrent failed " + Integer.toHexString(EGL14.eglGetError()));
+            }
+
+            mFrame= ByteBuffer.allocateDirect(_width * _height * SIZEOF_INT);
+            mFrame.order(ByteOrder.LITTLE_ENDIAN);
+
+            _preview= new GLPreview(_mirror, textureHandle);
+        }
+
+        public void stop() {
+            try {
+                _handler.sendMessage(_handler.obtainMessage(MSG_STOP));
+                _worker.join();
+            } catch (InterruptedException e) {
+            }
+            _worker= null;
+        }
+
+        protected void onStop() {
+            Log.d(TAG, "onStop");
+            Looper.myLooper().quit();
+        }
+
+        public void renderFrame(float[] transform, long timestamp) {
+            // bitshift the timestamp so that it can fit in arg1/arg2
+            _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_FRAME,
+                    (int) (timestamp >> 32), (int) timestamp, transform));
+        }
+
+        protected void onRenderFrame(float[] transformation, long timestamp) {
+            Log.d(TAG, "onRenderFrame");
+
+            // ignore zero timestamps, as it can really throw off the MediaCodec
+            if (timestamp == 0) return;
+
+            _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
+
+            boolean ok= EGL14.eglSwapBuffers(_eglDisplay, _eglSurface);
+            if (!ok) Log.d(TAG, "eglSwapBuffers fail: " + Integer.toHexString(EGL14.eglGetError()));
+
+            _frameCount++;
+            pullFrame();
+            try {
+                saveFrame(mFrame, new File(_outputFile, "IMG_" + _frameCount + ".jpg"));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+
+        protected void pullFrame() {
+            Log.d(TAG, "pullFrame");
+
+            mFrame.rewind();
+            GLES20.glReadPixels(0, 0, _width, _height,
+                    GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, mFrame);
+            GlUtil.checkGlError("glReadPixels");
+            mFrame.rewind();
+        }
+
+        protected void saveFrame(ByteBuffer frame, File file) throws IOException {
+            Log.d(TAG, "saveFrame " + file);
+            BufferedOutputStream bos = null;
+            try {
+                bos = new BufferedOutputStream(new FileOutputStream(file));
+                Bitmap bmp = Bitmap.createBitmap(_width, _height, Bitmap.Config.ARGB_8888);
+                bmp.copyPixelsFromBuffer(frame);
+                bmp.compress(Bitmap.CompressFormat.JPEG, 90, bos);
+                bmp.recycle();
+            } finally {
+                if (bos != null) bos.close();
+            }
+        }
+
+        private android.opengl.EGLConfig getConfig() {
+            int[] attribList = {
+                    EGL14.EGL_RED_SIZE, 8,
+                    EGL14.EGL_GREEN_SIZE, 8,
+                    EGL14.EGL_BLUE_SIZE, 8,
+                    EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT,
+                    EGL_RECORDABLE_ANDROID, 1,
+                    EGL14.EGL_NONE
+            };
+            android.opengl.EGLConfig[] configs = new android.opengl.EGLConfig[1];
+            int[] numConfigs = new int[1];
+            if (!EGL14.eglChooseConfig(_eglDisplay, attribList, 0, configs, 0, configs.length, numConfigs, 0)) {
+                throw new RuntimeException("eglChooseConfig failed " + Integer.toHexString(EGL14.eglGetError()));
+            }
+            return configs[0];
         }
     }
 
     public class AVEncoder {
+        private final String TAG= getClass().getSimpleName();
+
         protected HandlerThread _worker;
         protected Handler _handler;
 
@@ -256,7 +459,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         protected android.opengl.EGLConfig _eglConfig;
         protected EGLDisplay _eglDisplay= EGL14.EGL_NO_DISPLAY;
         protected EGLContext _eglContext= EGL14.EGL_NO_CONTEXT;
-        protected EGLSurface _encodingSurface;
+        protected EGLSurface _eglSurface;
         protected int _width, _height;
         protected boolean _mirror;
         GLPreview _preview;
@@ -421,13 +624,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _videoCodec.start();
 
             // create an EGLSurface bound to the MediaCodec surface
-            _encodingSurface = EGL14.eglCreateWindowSurface(_eglDisplay,
+            _eglSurface = EGL14.eglCreateWindowSurface(_eglDisplay,
                     _eglConfig, codecSurface,
                     new int[]{ EGL14.EGL_NONE }, 0);
-            if (_encodingSurface == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
+            if (_eglSurface == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
                 throw new RuntimeException("eglCreateWindowSurface failed");
             }
-            if (!EGL14.eglMakeCurrent(_eglDisplay, _encodingSurface, _encodingSurface, _eglContext)) {
+            if (!EGL14.eglMakeCurrent(_eglDisplay, _eglSurface, _eglSurface, _eglContext)) {
                 throw new RuntimeException("eglMakeCurrent failed");
             }
 
@@ -452,8 +655,8 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
 
-            EGLExt.eglPresentationTimeANDROID(_eglDisplay, _encodingSurface, timestamp);
-            boolean ok= EGL14.eglSwapBuffers(_eglDisplay, _encodingSurface);
+            EGLExt.eglPresentationTimeANDROID(_eglDisplay, _eglSurface, timestamp);
+            boolean ok= EGL14.eglSwapBuffers(_eglDisplay, _eglSurface);
         }
     }
 
