@@ -21,10 +21,13 @@ import android.content.pm.ActivityInfo;
 import android.graphics.Bitmap;
 import android.graphics.SurfaceTexture;
 import android.hardware.Camera;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
+import android.media.MediaRecorder;
 import android.opengl.EGL14;
 import android.opengl.EGLContext;
 import android.opengl.EGLDisplay;
@@ -63,7 +66,7 @@ import javax.microedition.khronos.opengles.GL10;
  * <p>
  * TODO: add options for different display sizes, frame rates, camera selection, etc.
  */
-public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFrameAvailableListener {
+public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFrameAvailableListener, AudioRunner.OnAudioAvailableListener {
     private final String TAG= getClass().getSimpleName();
 
     private GLSurfaceView mGLSurfaceView;
@@ -71,6 +74,12 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
     private Camera mCamera;
     private Camera.CameraInfo mCameraInfo;
+
+    private AudioRunner mAudioRunner;
+
+    private static final int SIZEOF_INT = Integer.SIZE/8;
+    private static final int SIZEOF_FLOAT = Float.SIZE/8;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -100,6 +109,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
     public void onResume() {
         super.onResume();
         openCamera();
+        openMic();
     }
 
     @Override
@@ -107,7 +117,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         super.onPause();
         mCamera.stopPreview();
         mCamera.release();
+        mAudioRunner.stop();
         mPreviewRenderer.release();
+    }
+
+    private void openMic() {
+        mAudioRunner= new AudioRunner();
+        mAudioRunner.setOnAudioAvailableListener(this);
     }
 
     private void openCamera() {
@@ -177,12 +193,20 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
+
+        if (!mAudioRunner.isRunning()) mAudioRunner.start();
     }
 
     @Override
     public void onFrameAvailable(SurfaceTexture surfaceTexture) {
         Log.d(TAG, "onFrameAvailable");
         mGLSurfaceView.requestRender();
+    }
+
+    @Override
+    public void onAudioAvailable(ByteBuffer buffer) {
+        Log.d(TAG, "onAudioAvailable");
+        mPreviewRenderer.mEncoder.renderAudioFrame(buffer);
     }
 
     private class GLPreviewRenderer implements GLSurfaceView.Renderer {
@@ -194,7 +218,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private final float[] mTransformationMatrix = new float[16];
         int _width, _height;
 
-        AVEncoder mEncoder;
+        public AVEncoder mEncoder;
         PreviewConsumer mConsumer;
 
         @Override
@@ -285,7 +309,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private static final int MSG_STOP= 1;
         private static final int MSG_RENDER_FRAME = 2;
 
-        private static final int SIZEOF_INT = Integer.SIZE/8;
 
         public PreviewConsumer(File outputFile, GLPreview.FlipDirection flipDirection) {
             _outputFile= outputFile;
@@ -469,6 +492,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private static final int MSG_START_RECORDING = 0;
         private static final int MSG_STOP_RECORDING = 1;
         private static final int MSG_RENDER_FRAME = 2;
+        private static final int MSG_RENDER_AUDIO_FRAME= 3;
 
         // @see https://www.khronos.org/registry/egl/extensions/ANDROID/EGL_ANDROID_recordable.txt
         private static final int EGL_RECORDABLE_ANDROID = 0x3142;
@@ -502,6 +526,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                                     (((long) inputMessage.arg2) & 0xffffffffL);
                             onRenderFrame((float[]) obj, timestamp);
                             break;
+                        case MSG_RENDER_AUDIO_FRAME:
+                            onRenderAudioFrame((ByteBuffer)obj);
+                            break;
                         case MSG_STOP_RECORDING:
                             onStopRecording();
                             break;
@@ -526,6 +553,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             // bitshift the timestamp so that it can fit in arg1/arg2
             _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_FRAME,
                     (int) (timestamp >> 32), (int) timestamp, transform));
+        }
+
+        public void renderAudioFrame(ByteBuffer buffer) {
+            _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_AUDIO_FRAME, buffer));
         }
 
         private android.opengl.EGLConfig getConfig() {
@@ -660,6 +691,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             EGLExt.eglPresentationTimeANDROID(_eglDisplay, _eglSurface, timestamp);
             boolean ok= EGL14.eglSwapBuffers(_eglDisplay, _eglSurface);
         }
+
+        protected void onRenderAudioFrame(ByteBuffer buffer) {
+            Log.d(TAG, "onRenderAudioFrame");
+        }
     }
 
     public static class GLPreview {
@@ -695,8 +730,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private final FloatBuffer textureBuffer;
         private int mProgramHandle, mPositionHandle, mTextureCoordHandle, mMVPMatrixHandle, mTexMatrixHandle;
         public int mTextureHandle;
-
-        private static final int SIZEOF_FLOAT = Float.SIZE/8;
 
         static final int COORDS_PER_VERTEX = 2;
         static float vertexCoords[] = {
@@ -831,6 +864,77 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             GLES20.glDisableVertexAttribArray(mTextureCoordHandle);
             GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0);
             GLES20.glUseProgram(0);
+        }
+    }
+}
+class AudioRunner {
+    interface OnAudioAvailableListener {
+        void onAudioAvailable(ByteBuffer buffer);
+    }
+
+    final String TAG= getClass().getSimpleName();
+
+    protected AudioRecord _audioRecord;
+    protected Thread _worker;
+    ByteBuffer _audioBuffer;
+    OnAudioAvailableListener _listener;
+
+    final int sampleRate= 16000;
+    final int channelConfig= AudioFormat.CHANNEL_IN_MONO;
+    final int audioFormat= AudioFormat.ENCODING_PCM_16BIT;
+
+    public AudioRunner() {
+    }
+
+    public void setOnAudioAvailableListener(OnAudioAvailableListener listener) {
+        _listener= listener;
+    }
+
+    public void start() {
+        int defaultBufferSizeInBytes= AudioRecord.getMinBufferSize(sampleRate, channelConfig, audioFormat) * (Short.SIZE/8);
+
+        _audioBuffer = ByteBuffer.allocateDirect(defaultBufferSizeInBytes);
+        _audioBuffer.mark();
+
+        _audioRecord = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, sampleRate, channelConfig, audioFormat, defaultBufferSizeInBytes);
+        if (_audioRecord.getState() == AudioRecord.STATE_UNINITIALIZED) throw new RuntimeException("Error creating AudioRecord instance: initialization check failed");
+
+        _audioRecord.startRecording();
+        _worker= new Thread(new AudioWorker(), getClass().getSimpleName() + "Worker");
+        _worker.start();
+    }
+
+    public void stop() {
+        _audioRecord.stop();
+        try {
+            _worker.join();
+        } catch (InterruptedException e) {
+        }
+        _audioRecord.release();
+        _audioRecord= null;
+    }
+
+    public boolean isRunning() {
+        return _audioRecord != null;
+    }
+
+    private class AudioWorker implements Runnable {
+        @Override
+        public void run() {
+            try {
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
+                while (_audioRecord.getRecordingState() == AudioRecord.RECORDSTATE_RECORDING) {
+                    _audioBuffer.reset();
+                    int bytesRead = _audioRecord.read(_audioBuffer, _audioBuffer.limit());
+                    _listener.onAudioAvailable(_audioBuffer);
+                    try {
+                        Thread.sleep(5);
+                    } catch (InterruptedException e) {
+                    }
+                }
+            } catch( Exception e ) {
+                throw new RuntimeException(e);
+            }
         }
     }
 }
