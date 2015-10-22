@@ -495,11 +495,14 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         protected MediaMuxer _muxer;
         protected File _outputFile;
 
+        protected long _startTimeUS;
+
         private static final String VIDEO_MIME_TYPE = "video/avc";    // H.264 Advanced Video Coding
         private static final int VIDEO_FRAME_RATE = 30;               // 30fps
         private static final int VIDEO_IFRAME_INTERVAL = 5;           // 5 seconds between I-frames
         private static final int VIDEO_BIT_RATE= 10000000;
         protected MediaCodecWrapper _videoCodec;
+        protected long _firstVideoFrameTimeUS;
         protected android.opengl.EGLConfig _eglConfig;
         protected EGLDisplay _eglDisplay= EGL14.EGL_NO_DISPLAY;
         protected EGLContext _eglContext= EGL14.EGL_NO_CONTEXT;
@@ -512,7 +515,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         private static final int AUDIO_BIT_RATE= 128000;
         protected MediaCodecWrapper _audioCodec;
         protected int _sampleRate;
-        protected long _lastPresentationTimeUS;
+        protected long _lastAudioFrameTimeUS;
 
         private static final int MSG_START_RECORDING = 0;
         private static final int MSG_STOP_RECORDING = 1;
@@ -590,10 +593,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             int bufferSize= buffer.limit();
             inputBuffer.put(buffer);
 
-            _audioCodec.codec.queueInputBuffer(inputBufferIndex, 0, bufferSize, _lastPresentationTimeUS, 0);
+            _audioCodec.codec.queueInputBuffer(inputBufferIndex, 0, bufferSize, _lastAudioFrameTimeUS, 0);
 
             final int frameSize= Short.SIZE/8;
-            _lastPresentationTimeUS+= ((1e6 * (bufferSize / frameSize)) + (_sampleRate>>2)) / _sampleRate;
+            _lastAudioFrameTimeUS += ((1e6 * (bufferSize / frameSize)) + (_sampleRate>>2)) / _sampleRate;
 
             _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_AUDIO_FRAME));
         }
@@ -685,7 +688,8 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         protected void onStartRecording(EGLContext eglContext, int textureHandle) {
             Log.d(TAG, "onStartRecording");
-            _lastPresentationTimeUS= System.nanoTime();
+            _startTimeUS= _lastAudioFrameTimeUS = System.nanoTime();
+            _firstVideoFrameTimeUS = -1;
 
             // create audio codec
             _audioCodec= new MediaCodecWrapper(createAudioCodec(_sampleRate));
@@ -733,7 +737,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             flushCodec(_videoCodec, true);
             _videoCodec.codec.stop();
 
-            _audioCodec.codec.queueInputBuffer(_audioCodec.codec.dequeueInputBuffer(-1), 0, 0, _lastPresentationTimeUS, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+            _audioCodec.codec.queueInputBuffer(_audioCodec.codec.dequeueInputBuffer(-1), 0, 0, _lastAudioFrameTimeUS, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
             flushCodec(_audioCodec, true);
             _audioCodec.codec.stop();
 
@@ -750,7 +754,14 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
 
-            EGLExt.eglPresentationTimeANDROID(_eglDisplay, _eglSurface, timestamp);
+            if (_firstVideoFrameTimeUS < 0) {
+                _firstVideoFrameTimeUS= timestamp;
+            }
+
+            // convert the timestamp into common offset
+            long adjustedTimestampUS= _startTimeUS + (timestamp - _firstVideoFrameTimeUS);
+
+            EGLExt.eglPresentationTimeANDROID(_eglDisplay, _eglSurface, adjustedTimestampUS);
             boolean ok= EGL14.eglSwapBuffers(_eglDisplay, _eglSurface);
         }
 
