@@ -57,7 +57,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.FloatBuffer;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
@@ -477,7 +476,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         class MediaCodecWrapper {
             public MediaCodec codec;
-            public int trackIndex;
+            public int trackIndex= -1;
 
             public MediaCodecWrapper(MediaCodec codec) {
                 this.codec= codec;
@@ -640,6 +639,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             return codec;
         }
 
+        protected boolean canStartMuxer() {
+            return _videoCodec.trackIndex >= 0 && _audioCodec.trackIndex >= 0;
+        }
+
         protected void flushCodec(MediaCodecWrapper codecWrapper, boolean drain) {
             MediaCodec.BufferInfo bufferInfo= new MediaCodec.BufferInfo();
             ByteBuffer[] encoderOutputBuffers = codecWrapper.codec.getOutputBuffers();
@@ -655,7 +658,8 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                             moreData= drain;
                             break;
                         case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
-                            // noop
+                            codecWrapper.trackIndex = _muxer.addTrack(codecWrapper.codec.getOutputFormat());
+                            if (canStartMuxer()) _muxer.start();
                             break;
                     }
                 } else {
@@ -685,21 +689,14 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             // create audio codec
             _audioCodec= new MediaCodecWrapper(createAudioCodec(_sampleRate));
-            MediaFormat audioFormat= _audioCodec.codec.getOutputFormat();
             _audioCodec.codec.start();
-            _audioCodec.trackIndex = _muxer.addTrack(audioFormat);
-            Log.d(TAG, "created audio format " + audioFormat);
 
             // create a video codec
             _videoCodec= new MediaCodecWrapper(createVideoCodec(_width, _height));
-            MediaFormat videoFormat= _videoCodec.codec.getOutputFormat();
             Surface codecSurface= _videoCodec.codec.createInputSurface();
             _videoCodec.codec.start();
-            _videoCodec.trackIndex = _muxer.addTrack(videoFormat);
-            Log.d(TAG, "created video format " + videoFormat);
 
-            // start up the muxer
-            _muxer.start();
+            // kick-start
             flushCodec(_audioCodec, false);
             flushCodec(_videoCodec, false);
 
