@@ -270,11 +270,11 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             // update to the current incoming frame
             mSurfaceTexture.updateTexImage();
             mSurfaceTexture.getTransformMatrix(mTransformationMatrix);
-            long timestamp= mSurfaceTexture.getTimestamp();
+            long timestampUS= mSurfaceTexture.getTimestamp();
 
             // notify consumers of the new frame
-            mEncoder.renderVideoFrame(mTransformationMatrix, timestamp);
-            mConsumer.renderVideoFrame(mTransformationMatrix, timestamp);
+            mEncoder.renderVideoFrame(mTransformationMatrix, timestampUS);
+            mConsumer.renderVideoFrame(mTransformationMatrix, timestampUS);
 
             // render the frame
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
@@ -338,10 +338,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                             onStart((EGLContext) obj, inputMessage.arg1);
                             break;
                         case MSG_RENDER_VIDEO_FRAME:
-                            // un-bitshift the timestamp
-                            long timestamp = (((long) inputMessage.arg1) << 32) |
+                            // un-bitshift the timestampUS
+                            long timestampUS = (((long) inputMessage.arg1) << 32) |
                                     (((long) inputMessage.arg2) & 0xffffffffL);
-                            onRenderVideoFrame((float[]) obj, timestamp);
+                            onRenderVideoFrame((float[]) obj, timestampUS);
                             break;
                         case MSG_STOP:
                             onStop();
@@ -402,17 +402,17 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             Looper.myLooper().quit();
         }
 
-        public void renderVideoFrame(float[] transform, long timestamp) {
+        public void renderVideoFrame(float[] transform, long timestampUS) {
             // bitshift the timestamp so that it can fit in arg1/arg2
             _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_VIDEO_FRAME,
-                    (int) (timestamp >> 32), (int) timestamp, transform));
+                    (int) (timestampUS >> 32), (int) timestampUS, transform));
         }
 
-        protected void onRenderVideoFrame(float[] transformation, long timestamp) {
+        protected void onRenderVideoFrame(float[] transformation, long timestampUS) {
             Log.d(TAG, "onRenderVideoFrame");
 
             // ignore zero timestamps, as it can really throw off the MediaCodec
-            if (timestamp == 0) return;
+            if (timestampUS == 0) return;
 
             _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
 
@@ -551,9 +551,9 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                             break;
                         case MSG_RENDER_VIDEO_FRAME:
                             // un-bitshift the timestamp
-                            long timestamp = (((long) inputMessage.arg1) << 32) |
+                            long timestampUS = (((long) inputMessage.arg1) << 32) |
                                     (((long) inputMessage.arg2) & 0xffffffffL);
-                            onRenderVideoFrame((float[]) obj, timestamp);
+                            onRenderVideoFrame((float[]) obj, timestampUS);
                             break;
                         case MSG_RENDER_AUDIO_FRAME:
                             onRenderAudioFrame((ByteBuffer)obj);
@@ -579,10 +579,10 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _audioCodec.release();
         }
 
-        public void renderVideoFrame(float[] transform, long timestamp) {
+        public void renderVideoFrame(float[] transform, long timestampUS) {
             // bitshift the timestamp so that it can fit in arg1/arg2
             _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_VIDEO_FRAME,
-                    (int) (timestamp >> 32), (int) timestamp, transform));
+                    (int) (timestampUS >> 32), (int) timestampUS, transform));
         }
 
         public void renderAudioFrame(ByteBuffer buffer) {
@@ -745,21 +745,21 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             Looper.myLooper().quit();
         }
 
-        protected void onRenderVideoFrame(float[] transformation, long timestamp) {
+        protected void onRenderVideoFrame(float[] transformation, long timestampUS) {
             Log.d(TAG, "onRenderVideoFrame");
             flushCodec(_videoCodec, false);
 
             // ignore zero timestamps, as it can really throw off the MediaCodec
-            if (timestamp == 0) return;
+            if (timestampUS == 0) return;
 
             _preview.draw(GlUtil.IDENTITY_MATRIX, transformation);
 
             if (_firstVideoFrameTimeUS < 0) {
-                _firstVideoFrameTimeUS= timestamp;
+                _firstVideoFrameTimeUS= timestampUS;
             }
 
             // convert the timestamp into common offset
-            long adjustedTimestampUS= _startTimeUS + (timestamp - _firstVideoFrameTimeUS);
+            long adjustedTimestampUS= _startTimeUS + (timestampUS - _firstVideoFrameTimeUS);
 
             EGLExt.eglPresentationTimeANDROID(_eglDisplay, _eglSurface, adjustedTimestampUS);
             boolean ok= EGL14.eglSwapBuffers(_eglDisplay, _eglSurface);
