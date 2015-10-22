@@ -41,6 +41,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Message;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.Surface;
@@ -598,7 +599,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _audioCodec.codec.queueInputBuffer(inputBufferIndex, 0, bufferSize, _lastAudioFrameTimeUS, 0);
 
             final int frameSize= Short.SIZE/8;
-            _lastAudioFrameTimeUS += ((1e6 * (bufferSize / frameSize)) + (_sampleRate>>2)) / _sampleRate;
+            _lastAudioFrameTimeUS += (((long)1e6 * (bufferSize / frameSize)) + (_sampleRate>>2)) / _sampleRate;
 
             _handler.sendMessage(_handler.obtainMessage(MSG_RENDER_AUDIO_FRAME));
         }
@@ -691,7 +692,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         protected void onStartRecording(EGLContext eglContext, int textureHandle) {
             Log.d(TAG, "onStartRecording");
-            _startTimeNS = System.nanoTime();
+            _startTimeNS = SystemClock.uptimeMillis() * (long)1e6;
             _lastAudioFrameTimeUS = _startTimeNS / 1000;
             _firstVideoFrameTimeNS = -1;
 
