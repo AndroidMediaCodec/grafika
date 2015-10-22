@@ -37,6 +37,7 @@ import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -227,17 +228,24 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         public AVEncoder mEncoder;
         PreviewConsumer mConsumer;
 
+        File mOutputFile;
+
+        public GLPreviewRenderer() {
+            mOutputFile= new File(Environment.getExternalStorageDirectory(), "grafika");
+            mOutputFile.mkdirs();
+        }
+
         @Override
         public void onSurfaceCreated(GL10 gl, EGLConfig config) {
             Log.d(TAG, "onSurfaceCreated");
             GLES20.glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
             mPreview = new GLPreview(GLPreview.FlipDirection.NONE);
             mSurfaceTexture= new SurfaceTexture(mPreview.mTextureHandle);
-            mConsumer= new PreviewConsumer(getExternalCacheDir(),
+            mConsumer= new PreviewConsumer(mOutputFile,
                                            mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT ? GLPreview.FlipDirection.BOTH : GLPreview.FlipDirection.VERTICAL);
 
             try {
-                mEncoder = new AVEncoder(new File(getExternalCacheDir(), "movie.mp4"),
+                mEncoder = new AVEncoder(new File(mOutputFile, "movie.mp4"),
                                          mCameraInfo.facing == Camera.CameraInfo.CAMERA_FACING_FRONT ? GLPreview.FlipDirection.HORIZONTAL : GLPreview.FlipDirection.NONE);
             } catch (IOException e) {
                 throw new RuntimeException(e);
