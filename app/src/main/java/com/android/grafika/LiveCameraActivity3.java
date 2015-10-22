@@ -540,8 +540,11 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _width= width;
             _height= height;
             _sampleRate= sampleRate;
+            _startTimeNS = SystemClock.uptimeMillis() * (long)1e6;
+
             _worker= new HandlerThread(getClass().getSimpleName() + "Worker");
             _worker.start();
+
             _handler= new Handler(_worker.getLooper()) {
                 @Override  // runs on encoder thread
                 public void handleMessage(Message inputMessage) {
@@ -692,7 +695,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         protected void onStartRecording(EGLContext eglContext, int textureHandle) {
             Log.d(TAG, "onStartRecording");
-            _startTimeNS = SystemClock.uptimeMillis() * (long)1e6;
             _lastAudioFrameTimeUS = _startTimeNS / 1000;
             _firstVideoFrameTimeNS = -1;
 
@@ -763,7 +765,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                 _firstVideoFrameTimeNS = timestampNS;
             }
 
-            // convert the timestamp into common offset
+            // convert the timestamp into offset from startTime
             long adjustedtimestampNS= _startTimeNS + (timestampNS - _firstVideoFrameTimeNS);
 
             EGLExt.eglPresentationTimeANDROID(_eglDisplay, _eglSurface, adjustedtimestampNS);
