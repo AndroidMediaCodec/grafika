@@ -485,12 +485,14 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         class MediaCodecWrapper {
             public MediaCodec codec;
-            public int trackIndex= -1;
+            public MediaFormat format;
             public String mimeType;
+            public int trackIndex= -1;
 
-            public MediaCodecWrapper(MediaCodec codec) {
+            public MediaCodecWrapper(MediaCodec codec, MediaFormat format) {
                 this.codec= codec;
-                this.mimeType= codec.getOutputFormat().getString(MediaFormat.KEY_MIME);
+                this.format= format;
+                this.mimeType= format.getString(MediaFormat.KEY_MIME);
             }
 
             public void release() {
@@ -504,6 +506,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         protected Handler _handler;
 
         protected MediaMuxer _muxer;
+        protected boolean _muxerStarted;
         protected File _outputFile;
 
         protected long _startTimeNS;
@@ -633,7 +636,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             return configs[0];
         }
 
-        protected MediaCodec createVideoCodec(int width, int height) {
+        protected MediaCodecWrapper createVideoCodec(int width, int height) {
             MediaFormat format = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, width, height);
 
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
@@ -643,17 +646,19 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
             MediaCodec codec= MediaCodec.createEncoderByType(VIDEO_MIME_TYPE);
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-            return codec;
+
+            return new MediaCodecWrapper(codec, format);
         }
 
-        protected MediaCodec createAudioCodec(int sampleRate) {
+        protected MediaCodecWrapper createAudioCodec(int sampleRate) {
             MediaFormat format= MediaFormat.createAudioFormat(AUDIO_MIME_TYPE, sampleRate, 1);
             format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
             format.setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE);
 
             MediaCodec codec= MediaCodec.createEncoderByType(AUDIO_MIME_TYPE);
             codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
-            return codec;
+
+            return new MediaCodecWrapper(codec, format);
         }
 
         protected boolean canStartMuxer() {
@@ -665,7 +670,6 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             ByteBuffer[] encoderOutputBuffers = codecWrapper.codec.getOutputBuffers();
 
             boolean moreData= true;
-
             while (moreData) {
                 int encoderStatus = codecWrapper.codec.dequeueOutputBuffer(bufferInfo, 0);
                 if (encoderStatus < 0) {
@@ -676,18 +680,27 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
                             break;
                         case MediaCodec.INFO_OUTPUT_FORMAT_CHANGED:
                             codecWrapper.trackIndex = _muxer.addTrack(codecWrapper.codec.getOutputFormat());
-                            if (canStartMuxer()) _muxer.start();
+                            if (canStartMuxer()) {
+                                _muxer.start();
+                                _muxerStarted= true;
+                            } else {
+                                // Don't write any more data if the muxer isn't started.
+                                // This may buy us some time until the other codec can start
+                                moreData= false;
+                            }
                             break;
                     }
                 } else {
                     try {
                         ByteBuffer encodedData = encoderOutputBuffers[encoderStatus];
-                        if (bufferInfo.size > 0 && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
+                        if (_muxerStarted && bufferInfo.size > 0 && (bufferInfo.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) == 0) {
                             // adjust the ByteBuffer values to match BufferInfo (not needed?)
                             encodedData.position(bufferInfo.offset);
                             encodedData.limit(bufferInfo.offset + bufferInfo.size);
 
                             _muxer.writeSampleData(codecWrapper.trackIndex, encodedData, bufferInfo);
+                        } else if (!_muxerStarted) {
+                            Log.d(TAG, "dropping frame " + codecWrapper.mimeType);
                         }
                     } finally {
                         codecWrapper.codec.releaseOutputBuffer(encoderStatus, false);
@@ -707,17 +720,13 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             _firstVideoFrameTimeNS = -1;
 
             // create audio codec
-            _audioCodec= new MediaCodecWrapper(createAudioCodec(_sampleRate));
+            _audioCodec= createAudioCodec(_sampleRate);
             _audioCodec.codec.start();
 
             // create a video codec
-            _videoCodec= new MediaCodecWrapper(createVideoCodec(_width, _height));
+            _videoCodec= createVideoCodec(_width, _height);
             Surface codecSurface= _videoCodec.codec.createInputSurface();
             _videoCodec.codec.start();
-
-            // kick-start
-            flushCodec(_audioCodec, false);
-            flushCodec(_videoCodec, false);
 
             // create an EGLContext from the input context
             _eglDisplay= EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
