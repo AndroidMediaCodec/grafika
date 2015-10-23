@@ -399,6 +399,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
 
         public void stop() {
             try {
+                _handler.removeCallbacksAndMessages(null);
                 _handler.sendMessage(_handler.obtainMessage(MSG_STOP));
                 _worker.join();
             } catch (InterruptedException e) {
