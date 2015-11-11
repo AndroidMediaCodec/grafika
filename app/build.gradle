@@ -1,13 +1,13 @@
 apply plugin: 'com.android.application'
 
 android {
-    compileSdkVersion 19
+    compileSdkVersion 21
     buildToolsVersion "23.0.1"
 
     defaultConfig {
         applicationId "com.android.grafika"
         minSdkVersion 18
-        targetSdkVersion 18
+        targetSdkVersion 21
     }
 
     buildTypes {

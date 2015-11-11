@@ -637,7 +637,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             return configs[0];
         }
 
-        protected MediaCodecWrapper createVideoCodec(int width, int height) {
+        protected MediaCodecWrapper createVideoCodec(int width, int height) throws IOException {
             MediaFormat format = MediaFormat.createVideoFormat(VIDEO_MIME_TYPE, width, height);
 
             format.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
@@ -651,7 +651,7 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
             return new MediaCodecWrapper(codec, format);
         }
 
-        protected MediaCodecWrapper createAudioCodec(int sampleRate) {
+        protected MediaCodecWrapper createAudioCodec(int sampleRate) throws IOException {
             MediaFormat format= MediaFormat.createAudioFormat(AUDIO_MIME_TYPE, sampleRate, 1);
             format.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
             format.setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_BIT_RATE);
@@ -716,43 +716,47 @@ public class LiveCameraActivity3 extends Activity implements SurfaceTexture.OnFr
         }
 
         protected void onStartRecording(EGLContext eglContext, int textureHandle) {
-            Log.d(TAG, "onStartRecording");
-            _lastAudioFrameTimeUS = _startTimeNS / 1000;
-            _firstVideoFrameTimeNS = -1;
+            try {
+                Log.d(TAG, "onStartRecording");
+                _lastAudioFrameTimeUS = _startTimeNS / 1000;
+                _firstVideoFrameTimeNS = -1;
 
-            // create audio codec
-            _audioCodec= createAudioCodec(_sampleRate);
-            _audioCodec.codec.start();
+                // create audio codec
+                _audioCodec = createAudioCodec(_sampleRate);
+                _audioCodec.codec.start();
 
-            // create a video codec
-            _videoCodec= createVideoCodec(_width, _height);
-            Surface codecSurface= _videoCodec.codec.createInputSurface();
-            _videoCodec.codec.start();
+                // create a video codec
+                _videoCodec = createVideoCodec(_width, _height);
+                Surface codecSurface = _videoCodec.codec.createInputSurface();
+                _videoCodec.codec.start();
 
-            // create an EGLContext from the input context
-            _eglDisplay= EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
-            _eglConfig= getConfig();
-            _eglContext= EGL14.eglCreateContext(_eglDisplay,
-                    _eglConfig, eglContext,
-                    new int[] { EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE },
-                    0);
-            if (_eglContext == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
-                throw new RuntimeException("eglCreateContext failed");
+                // create an EGLContext from the input context
+                _eglDisplay = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
+                _eglConfig = getConfig();
+                _eglContext = EGL14.eglCreateContext(_eglDisplay,
+                        _eglConfig, eglContext,
+                        new int[]{EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE},
+                        0);
+                if (_eglContext == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
+                    throw new RuntimeException("eglCreateContext failed");
+                }
+
+                // create an EGLSurface bound to the MediaCodec surface
+                _eglSurface = EGL14.eglCreateWindowSurface(_eglDisplay,
+                        _eglConfig, codecSurface,
+                        new int[]{EGL14.EGL_NONE}, 0);
+                if (_eglSurface == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
+                    throw new RuntimeException("eglCreateWindowSurface failed");
+                }
+                if (!EGL14.eglMakeCurrent(_eglDisplay, _eglSurface, _eglSurface, _eglContext)) {
+                    throw new RuntimeException("eglMakeCurrent failed");
+                }
+
+                // create an OpenGL program for rendering
+                _preview = new GLPreview(GLPreview.FlipDirection.HORIZONTAL, textureHandle);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
             }
-
-            // create an EGLSurface bound to the MediaCodec surface
-            _eglSurface = EGL14.eglCreateWindowSurface(_eglDisplay,
-                    _eglConfig, codecSurface,
-                    new int[]{ EGL14.EGL_NONE }, 0);
-            if (_eglSurface == null || EGL14.eglGetError() != EGL14.EGL_SUCCESS) {
-                throw new RuntimeException("eglCreateWindowSurface failed");
-            }
-            if (!EGL14.eglMakeCurrent(_eglDisplay, _eglSurface, _eglSurface, _eglContext)) {
-                throw new RuntimeException("eglMakeCurrent failed");
-            }
-
-            // create an OpenGL program for rendering
-            _preview= new GLPreview(GLPreview.FlipDirection.HORIZONTAL, textureHandle);
         }
 
         protected void onStopRecording() {
