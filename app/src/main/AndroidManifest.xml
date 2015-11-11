@@ -66,6 +66,10 @@
             android:label="@string/title_activity_live_camera3" >
         </activity>
         <activity
+            android:name="com.android.grafika.LiveCameraActivity4"
+            android:label="@string/title_activity_live_camera3" >
+        </activity>
+        <activity
             android:name="com.android.grafika.CameraCaptureActivity"
             android:label="@string/title_activity_camera_capture" >
         </activity>
