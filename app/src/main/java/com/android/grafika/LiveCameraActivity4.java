@@ -52,7 +52,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * More or less straight out of TextureView's doc.
+ * More or less straight out of android-Camera2Basic sample app.
  * <p>
  * TODO: add options for different display sizes, frame rates, camera selection, etc.
  */
