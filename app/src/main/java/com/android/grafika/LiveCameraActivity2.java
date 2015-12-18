@@ -99,7 +99,8 @@ public class LiveCameraActivity2 extends Activity implements SurfaceHolder.Callb
 
         Camera.Parameters params = mCamera.getParameters();
         Camera.Size preferredSize= params.getPreferredPreviewSizeForVideo();
-        params.setPreviewSize(preferredSize.width, preferredSize.height);
+        //params.setPreviewSize(preferredSize.width, preferredSize.height);
+        params.setPreviewSize(720, 480);
         params.setRotation(imageRotation);
         mCamera.setParameters(params);
         mCamera.setDisplayOrientation(displayRotation);
