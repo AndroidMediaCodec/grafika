@@ -205,6 +205,7 @@ public class LiveCameraActivity4 extends Activity implements TextureView.Surface
             Size yuvSize= chooseVideoSize(imageSizes, aspectRatio);
             Log.d(TAG, "image " + yuvSize.getWidth() + "x" + yuvSize.getHeight());
 
+            mTextureView.getSurfaceTexture().setDefaultBufferSize(yuvSize.getWidth(), yuvSize.getHeight());
             mImageReader = ImageReader.newInstance(yuvSize.getWidth(), yuvSize.getHeight(), ImageFormat.YUV_420_888, 2);
             mImageReader.setOnImageAvailableListener(this, mWorkerHandler);
 
