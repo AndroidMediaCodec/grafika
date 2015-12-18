@@ -20,6 +20,7 @@ import android.annotation.TargetApi;
 import android.app.Activity;
 import android.content.Context;
 import android.content.pm.ActivityInfo;
+import android.content.res.Configuration;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
@@ -60,7 +61,7 @@ import java.util.List;
 public class LiveCameraActivity4 extends Activity implements TextureView.SurfaceTextureListener, ImageReader.OnImageAvailableListener {
     private static final String TAG = MainActivity.TAG;
 
-    private TextureView mTextureView;
+    private AutoFitTextureView mTextureView;
     private Surface mPreviewSurface;
     private ImageReader mImageReader;
     File mOutputDir;
@@ -80,8 +81,9 @@ public class LiveCameraActivity4 extends Activity implements TextureView.Surface
 
         startWorkerThread();
 
-        mTextureView = new TextureView(this);
+        mTextureView = new AutoFitTextureView(this);
         mTextureView.setSurfaceTextureListener(this);
+        mTextureView.setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
 
         ((ViewGroup)findViewById(android.R.id.content)).addView(mTextureView);
 
@@ -140,7 +142,16 @@ public class LiveCameraActivity4 extends Activity implements TextureView.Surface
     public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
         mPreviewSurface= new Surface(surface);
         Size previewSize= openCamera();
-        setPreviewAspectRatio(previewSize, width, height);
+
+        // We fit the aspect ratio of TextureView to the size of preview we picked.
+        int orientation = getResources().getConfiguration().orientation;
+        if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+            mTextureView.setAspectRatio(
+                    previewSize.getWidth(), previewSize.getHeight());
+        } else {
+            mTextureView.setAspectRatio(
+                    previewSize.getHeight(), previewSize.getWidth());
+        }
     }
 
     public static class CameraInfo {
@@ -274,24 +285,6 @@ public class LiveCameraActivity4 extends Activity implements TextureView.Surface
         } catch (CameraAccessException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    protected void setPreviewAspectRatio(Size previewSize, int width, int height) {
-        int screenOrientation= CameraUtils.getScreenOrientation(this);
-        if (screenOrientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT || screenOrientation == ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT) {
-            previewSize= new Size(previewSize.getHeight(), previewSize.getWidth());
-        }
-
-        float previewAspectRatio = previewSize.getWidth() / (float) previewSize.getHeight();
-        int scaledWidth = (int) Math.round(height * (double) previewAspectRatio);
-        int scaledHeight = (int) Math.round(width / (double) previewAspectRatio);
-        if (scaledWidth <= width) {
-            width = scaledWidth;
-        } else {
-            height = scaledHeight;
-        }
-
-        mTextureView.setLayoutParams(new FrameLayout.LayoutParams(width, height, Gravity.CENTER));
     }
 
     protected void logOutputFormats(String name, int[] outputFormats) {
