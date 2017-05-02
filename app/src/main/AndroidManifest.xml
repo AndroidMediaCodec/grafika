@@ -26,6 +26,7 @@
 
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 
@@ -55,6 +56,18 @@
         <activity
             android:name="com.android.grafika.LiveCameraActivity"
             android:label="@string/title_activity_live_camera" >
+        </activity>
+        <activity
+            android:name="com.android.grafika.LiveCameraActivity2"
+            android:label="@string/title_activity_live_camera2" >
+        </activity>
+        <activity
+            android:name="com.android.grafika.LiveCameraActivity3"
+            android:label="@string/title_activity_live_camera3" >
+        </activity>
+        <activity
+            android:name="com.android.grafika.LiveCameraActivity4"
+            android:label="@string/title_activity_live_camera4" >
         </activity>
         <activity
             android:name="com.android.grafika.CameraCaptureActivity"
